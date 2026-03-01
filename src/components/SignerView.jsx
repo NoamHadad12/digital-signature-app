@@ -2,14 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { storage } from '../firebase';
 import { ref, getDownloadURL } from 'firebase/storage';
-import { Document, Page, pdfjs } from 'react-pdf';
+import * as pdfjs from 'pdfjs-dist/build/pdf';
+
+// Set the workerSrc for pdfjs to a specific version to avoid mismatches
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/2.6.347/pdf.worker.min.js`;
+
+import { Document, Page } from 'react-pdf';
 import SignaturePad from 'react-signature-canvas';
 
 // Resolve issue with some versions of react-signature-canvas
 const SignatureCanvas = SignaturePad.default || SignaturePad;
-
-// Ensure the worker version matches the package version
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@5.4.296/build/pdf.worker.min.mjs`;
 
 const SignerView = () => {
   console.log("!!! DEBUG: SignerView component is rendering !!!");
