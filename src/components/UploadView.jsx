@@ -7,6 +7,7 @@ const UploadView = () => {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [generatedLink, setGeneratedLink] = useState('');
+  const [isCopied, setIsCopied] = useState(false);
 
   const handleUpload = async () => {
     if (!file) {
@@ -16,6 +17,7 @@ const UploadView = () => {
     
     setUploading(true);
     setGeneratedLink(''); // Reset link on new upload
+    setIsCopied(false); // Reset copied state on new upload
     const fileId = uuidv4();
     const storageRef = ref(storage, `pdfs/${fileId}.pdf`);
 
@@ -35,7 +37,8 @@ const UploadView = () => {
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(generatedLink).then(() => {
-      alert('Link copied to clipboard!');
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000); // Reset after 2 seconds
     }, (err) => {
       console.error('Failed to copy link: ', err);
     });
@@ -82,7 +85,9 @@ const UploadView = () => {
               readOnly 
               style={{ flexGrow: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
             />
-            <button onClick={copyToClipboard} style={{ padding: '8px 12px' }}>Copy</button>
+            <button onClick={copyToClipboard} style={{ padding: '8px 12px' }}>
+              {isCopied ? 'Copied!' : 'Copy'}
+            </button>
           </div>
         </div>
       )}
