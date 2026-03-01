@@ -155,6 +155,8 @@ const SignerView = () => {
           <SignatureCanvas 
             ref={sigCanvas}
             penColor='black'
+            minWidth={2.5}
+            maxWidth={5}
             canvasProps={{ width: 400, height: 150, className: 'sigCanvas' }} // Scaled down canvas
           />
         </div>
