@@ -1,4 +1,6 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+// fontkit is no longer needed for standard fonts
+// import fontkit from '@pdf-lib/fontkit'; 
 import { initializeApp, getApps } from 'firebase/app';
 import { getStorage, ref, getBytes, uploadBytes } from 'firebase/storage';
 
@@ -87,38 +89,38 @@ const keywords = [
     }
 
     // 4. Define signature area dimensions and draw elements
-    const sigWidth = 120; // Scaled down width
-    const sigHeight = 40;  // Scaled down height
-    const boxPadding = 4;
-    const textHeight = 8;
-    const sigY = targetY + 10; // Y position for the signature image
+    const sigWidth = 150; // Slightly wider for better presence
+    const sigHeight = 50;
+    const boxPadding = 5;
+    const sigY = targetY + 15; // Adjust vertical placement
 
-    // Embed a standard font for the label
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    // --- REVERT TO STANDARD FONT FOR ENGLISH ---
+    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-    // Draw the "Signature" label
+    // Draw the "Signature" label with a clean, bold look
     lastPage.drawText('Signature', {
       x: targetX,
-      y: sigY + sigHeight + textHeight, // Position text above the box
-      font,
-      size: 9,
-      color: rgb(0.3, 0.3, 0.3),
+      y: sigY + sigHeight + boxPadding, // Position text above the signature area
+      font: font, // Use the standard Helvetica-Bold font
+      size: 12,
+      color: rgb(0.1, 0.1, 0.1),
     });
 
-    // Draw the signature image
+    // Draw the signature image, making it appear bolder
     lastPage.drawImage(signatureImage, {
       x: targetX,
-      y: sigY, 
+      y: sigY,
       width: sigWidth,
       height: sigHeight,
+      opacity: 0.95, // Increase opacity to make the signature bolder
     });
 
-    // Draw a line below the signature for a clean look
+    // Draw a thicker line below the signature for a professional finish
     lastPage.drawLine({
-        start: { x: targetX, y: sigY - boxPadding },
-        end: { x: targetX + sigWidth, y: sigY - boxPadding },
-        thickness: 0.5,
-        color: rgb(0.2, 0.2, 0.2),
+        start: { x: targetX, y: sigY - boxPadding + 2 },
+        end: { x: targetX + sigWidth, y: sigY - boxPadding + 2 },
+        thickness: 1.5, // Thicker line
+        color: rgb(0.1, 0.1, 0.1),
     });
 
     // 5. Save and Upload

@@ -133,10 +133,10 @@ const SignerView = () => {
         <p>Loading document from the cloud...</p>
       )}
 
-      {/* Enhanced Signature Box */}
+      {/* Scaled-down Signature Box */}
       <div style={{ 
         marginTop: '20px', 
-        width: '504px', 
+        width: '404px', // Scaled down width
         border: '1px solid #ccc', 
         borderRadius: '8px', 
         padding: '10px', 
@@ -155,9 +155,20 @@ const SignerView = () => {
           <SignatureCanvas 
             ref={sigCanvas}
             penColor='black'
-            canvasProps={{ width: 500, height: 200, className: 'sigCanvas' }} 
+            canvasProps={{ width: 400, height: 150, className: 'sigCanvas' }} // Scaled down canvas
           />
         </div>
+        <p style={{
+          position: 'relative',
+          top: '-100px', // Adjusted vertical position
+          textAlign: 'center',
+          color: '#aaa',
+          pointerEvents: 'none',
+          zIndex: -1,
+          margin: 0
+        }}>
+          Sign Here
+        </p>
       </div>
 
       <button 
