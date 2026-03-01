@@ -135,7 +135,7 @@ const keywords = [
     await uploadBytes(signedFileRef, pdfBytes, metadata);
 
     // Generate a public download URL with a token
-    const downloadUrl = await getDownloadURL(signedFilere);
+    const downloadUrl = await getDownloadURL(signedFileRef);
 
     res.status(200).json({ 
       message: 'Success', 
