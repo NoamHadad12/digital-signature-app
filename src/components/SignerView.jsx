@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { storage } from '../firebase';
 import { ref, getDownloadURL } from 'firebase/storage';
 import { Document, Page, pdfjs } from 'react-pdf';
@@ -18,6 +18,8 @@ const SignerView = () => {
   const [pdfUrl, setPdfUrl] = useState(null);
   const [numPages, setNumPages] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [signedPdfUrl, setSignedPdfUrl] = useState('');
   
   // Initialize ref with null for better practice with DOM elements/components
   const sigCanvas = useRef(null);
@@ -39,15 +41,8 @@ const SignerView = () => {
     setNumPages(numPages);
   };
 
-  // Updated handleFinish with the Vite fix
   const handleFinish = async () => {
-    if (!sigCanvas.current) {
-      alert("The signature tool is not ready.");
-      return;
-    }
-
-    // Check if it's empty
-    if (sigCanvas.current.isEmpty()) {
+    if (!sigCanvas.current || sigCanvas.current.isEmpty()) {
       alert("Please provide a signature first.");
       return;
     }
@@ -55,10 +50,7 @@ const SignerView = () => {
     setIsSubmitting(true);
 
     try {
-      // THE FIX: Use getCanvas() instead of getTrimmedCanvas()
-      // This bypasses the Vite bug completely and grabs the raw HTML canvas.
       const signatureData = sigCanvas.current.getCanvas().toDataURL('image/png');
-      console.log("Captured native canvas data successfully!");
 
       const response = await fetch('/api/sign', {
         method: 'POST',
@@ -72,8 +64,11 @@ const SignerView = () => {
         throw new Error(result.error || 'Failed to sign the document.');
       }
 
-      alert(`Success! Signed document is saved as ${result.fileName}`);
-      console.log("Backend response:", result);
+      // Get the download URL for the newly signed PDF
+      const signedFileRef = ref(storage, result.downloadUrl);
+      const downloadUrl = await getDownloadURL(signedFileRef);
+      setSignedPdfUrl(downloadUrl);
+      setIsCompleted(true); // Set completion state to true
       
     } catch (error) {
       console.error("Error during the signing process:", error);
@@ -82,6 +77,34 @@ const SignerView = () => {
       setIsSubmitting(false);
     }
   };
+
+  // Success screen component
+  if (isCompleted) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', border: '1px solid #ccc', borderRadius: '8px', backgroundColor: '#f9f9f9' }}>
+        <h1 style={{ color: '#28a745' }}>✓ Document Signed and Sent!</h1>
+        <p>Thank you for completing the document.</p>
+        <a 
+          href={signedPdfUrl} 
+          download 
+          target="_blank" 
+          rel="noopener noreferrer"
+          style={{
+            display: 'inline-block',
+            marginTop: '20px',
+            padding: '12px 24px',
+            backgroundColor: '#007bff',
+            color: 'white',
+            textDecoration: 'none',
+            borderRadius: '5px',
+            cursor: 'pointer'
+          }}
+        >
+          Download Your Copy
+        </a>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px' }}>
@@ -110,13 +133,31 @@ const SignerView = () => {
         <p>Loading document from the cloud...</p>
       )}
 
-      <div style={{ border: '2px dashed #000', backgroundColor: '#f0f0f0', borderRadius: '8px' }}>
-        <p style={{ textAlign: 'center', margin: '5px' }}>Sign here:</p>
-        <SignatureCanvas 
-          ref={sigCanvas}
-          penColor='black'
-          canvasProps={{ width: 500, height: 200, className: 'sigCanvas' }} 
-        />
+      {/* Enhanced Signature Box */}
+      <div style={{ 
+        marginTop: '20px', 
+        width: '504px', 
+        border: '1px solid #ccc', 
+        borderRadius: '8px', 
+        padding: '10px', 
+        boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+        backgroundColor: '#fff'
+      }}>
+        <p style={{ 
+          textAlign: 'left', 
+          margin: '0 0 10px 5px', 
+          fontWeight: 'bold', 
+          color: '#333' 
+        }}>
+          Signature
+        </p>
+        <div style={{ border: '2px solid #e0e0e0', borderRadius: '4px' }}>
+          <SignatureCanvas 
+            ref={sigCanvas}
+            penColor='black'
+            canvasProps={{ width: 500, height: 200, className: 'sigCanvas' }} 
+          />
+        </div>
       </div>
 
       <button 

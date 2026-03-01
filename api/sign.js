@@ -1,4 +1,4 @@
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { initializeApp, getApps } from 'firebase/app';
 import { getStorage, ref, getBytes, uploadBytes } from 'firebase/storage';
 
@@ -86,16 +86,39 @@ const keywords = [
       console.warn("Text scanning failed or skipped, using default placement:", scanError.message);
     }
 
-    // 4. Draw the signature exactly at the calculated coordinates
-    const sigWidth = 150;
-    const sigHeight = 60;
+    // 4. Define signature area dimensions and draw elements
+    const sigWidth = 120; // Scaled down width
+    const sigHeight = 40;  // Scaled down height
+    const boxPadding = 4;
+    const textHeight = 8;
+    const sigY = targetY + 10; // Y position for the signature image
 
+    // Embed a standard font for the label
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    // Draw the "Signature" label
+    lastPage.drawText('Signature', {
+      x: targetX,
+      y: sigY + sigHeight + textHeight, // Position text above the box
+      font,
+      size: 9,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+
+    // Draw the signature image
     lastPage.drawImage(signatureImage, {
       x: targetX,
-      // Add a slight offset so the signature sits just above the text
-      y: targetY + 10, 
+      y: sigY, 
       width: sigWidth,
       height: sigHeight,
+    });
+
+    // Draw a line below the signature for a clean look
+    lastPage.drawLine({
+        start: { x: targetX, y: sigY - boxPadding },
+        end: { x: targetX + sigWidth, y: sigY - boxPadding },
+        thickness: 0.5,
+        color: rgb(0.2, 0.2, 0.2),
     });
 
     // 5. Save and Upload
