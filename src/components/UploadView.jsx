@@ -17,14 +17,13 @@ const UploadView = () => {
     try {
       // Upload the file to Firebase Storage
       await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
       
-      // Generate the signing link
-      const signingLink = `${window.location.origin}/sign/${fileId}`;
-      console.log("Success! File URL:", url);
-      alert(`Upload complete! Your link: ${signingLink}`);
+      // Ensure the generated URL includes the /sign/ route path
+      const link = `http://localhost:3000/sign/${fileId}`;
+      alert(`Upload complete! Your link: ${link}`);
     } catch (error) {
       console.error("Upload failed:", error);
+      alert(`Upload failed: ${error.message}`);
     } finally {
       setUploading(false);
     }

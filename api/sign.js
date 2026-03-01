@@ -1,68 +1,118 @@
-
 import { PDFDocument } from 'pdf-lib';
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import { getStorage, ref, getBytes, uploadBytes } from 'firebase/storage';
 
-// Pull the configuration from environment variables
+// Import pdfjs-dist for text extraction
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+
 const firebaseConfig = {
   apiKey: process.env.VITE_FIREBASE_API_KEY,
-  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.VITE_FIREBASE_APP_ID
+  storageBucket: "signflow-app-69de2.firebasestorage.app",
+  projectId: "signflow-app-69de2",
 };
 
-// Initialize Firebase outside the handler for reuse
-const app = initializeApp(firebaseConfig);
-const storage = getStorage(app);
-
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
-  }
+  if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
 
   const { documentId, signatureData } = req.body;
 
-  if (!documentId || !signatureData) {
-    return res.status(400).json({ error: 'Missing documentId or signatureData' });
-  }
-
   try {
-    // 1. Download original PDF bytes from Firebase Storage
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+    const storage = getStorage(app);
     const fileRef = ref(storage, `pdfs/${documentId}.pdf`);
+
+    // 1. Download original PDF
     const existingPdfBytes = await getBytes(fileRef);
 
-    // 2. Load the PDF and embed the signature image
+    // 2. Load PDF for modifying (pdf-lib)
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
-    const signatureImage = await pdfDoc.embedPng(signatureData);
+    const base64Data = signatureData.split(',')[1];
+    const signatureImage = await pdfDoc.embedPng(Buffer.from(base64Data, 'base64'));
 
-    // 3. Get the last page to place the signature
     const pages = pdfDoc.getPages();
     const lastPage = pages[pages.length - 1];
     const { width, height } = lastPage.getSize();
 
-    // 4. Draw the signature image onto the PDF
-    // TODO: Implement text-search logic to find a placeholder like "Signature" or "חתום כאן"
-    // For now, using fixed coordinates at the bottom-right.
+    // 3. Search for Keywords using pdfjs-dist
+    let targetX = width - 150 - 15; // Default X (bottom right)
+    let targetY = 30;               // Default Y (bottom right)
+    
+const keywords = [
+  // English - Direct Instructions
+  "sign here", 
+  "signature", 
+  "signatory", 
+  "initials", 
+  "signed by",
+  "execute here",
+  "witness signature",
+  "authorized signature",
+  "print name",
+  
+  // Hebrew - Direct Instructions
+  "חתום כאן", 
+  "חתימה", 
+  "חתימת הלקוח", 
+  "חתימת השוכר", 
+  "חתימת המוכר",
+  "חתימת המצהיר",
+  "שם וחתימה",
+  "חתימת המורשה",
+  "חתימה וחותמת",
+  "ראשי תיבות",
+  "אישור",
+];    
+    try {
+      // Load document into the text scanner
+      const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(existingPdfBytes) });
+      const doc = await loadingTask.promise;
+      const targetPageNum = pages.length; // Scan the last page
+      const page = await doc.getPage(targetPageNum);
+      const textContent = await page.getTextContent();
+
+      // Iterate over text items to find keywords
+      for (const item of textContent.items) {
+        const textStr = item.str.toLowerCase().trim();
+        // Check if the current text block contains any of our keywords
+        if (keywords.some(keyword => textStr.includes(keyword))) {
+          // item.transform[4] is X, item.transform[5] is Y
+          targetX = item.transform[4];
+          targetY = item.transform[5];
+          console.log(`Found keyword "${textStr}" at X: ${targetX}, Y: ${targetY}`);
+          break; // Stop searching once found
+        }
+      }
+    } catch (scanError) {
+      console.warn("Text scanning failed or skipped, using default placement:", scanError.message);
+    }
+
+    // 4. Draw the signature exactly at the calculated coordinates
+    const sigWidth = 150;
+    const sigHeight = 60;
+
     lastPage.drawImage(signatureImage, {
-      x: width - 170, // Position from left
-      y: 80,          // Position from bottom
-      width: 150,
-      height: 75,
+      x: targetX,
+      // Add a slight offset so the signature sits just above the text
+      y: targetY + 10, 
+      width: sigWidth,
+      height: sigHeight,
     });
 
-    // 5. Serialize the modified PDF to bytes
+    // 5. Save and Upload
     const pdfBytes = await pdfDoc.save();
+    const signedFileRef = ref(storage, `pdfs/signed_${documentId}.pdf`);
+    
+    const metadata = { contentType: 'application/pdf' };
+    await uploadBytes(signedFileRef, pdfBytes, metadata);
 
-    // 6. Upload the signed PDF back to Firebase Storage
-    const signedFileName = `signed_${documentId}.pdf`;
-    const signedFileRef = ref(storage, `pdfs/${signedFileName}`);
-    await uploadBytes(signedFileRef, pdfBytes, { contentType: 'application/pdf' });
+    res.status(200).json({ 
+      message: 'Success', 
+      fileName: `signed_${documentId}.pdf`,
+      downloadUrl: `pdfs/signed_${documentId}.pdf` 
+    });
 
-    res.status(200).json({ message: 'Document signed successfully!', fileName: signedFileName });
   } catch (error) {
-    console.error('Error signing document:', error);
-    res.status(500).json({ error: 'Failed to sign document.', details: error.message });
+    console.error("Backend Error:", error);
+    res.status(500).json({ error: error.message });
   }
 }

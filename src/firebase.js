@@ -18,3 +18,4 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Cloud Storage and export it so other files can use it
 export const storage = getStorage(app);
+
