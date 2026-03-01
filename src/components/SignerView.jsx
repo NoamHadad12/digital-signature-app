@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { storage } from '../firebase';
 import { ref, getDownloadURL } from 'firebase/storage';
-import * as pdfjs from 'pdfjs-dist/build/pdf';
-
-// Set the workerSrc for pdfjs to a specific version to avoid mismatches
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/2.6.347/pdf.worker.min.js`;
-
-import { Document, Page } from 'react-pdf';
+import { Document, Page, pdfjs } from 'react-pdf';
 import SignaturePad from 'react-signature-canvas';
+import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
+import 'react-pdf/dist/esm/Page/TextLayer.css';
+
+// Set the worker source from a reliable CDN to ensure compatibility
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 // Resolve issue with some versions of react-signature-canvas
 const SignatureCanvas = SignaturePad.default || SignaturePad;
