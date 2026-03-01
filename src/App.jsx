@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import UploadView from './components/UploadView';
 import SignerView from './components/SignerView';
 
+
 function App() {
   return (
     // Wrap the app in BrowserRouter to enable navigation
