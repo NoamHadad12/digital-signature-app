@@ -68,29 +68,31 @@ const UploadView = () => {
       setIsCopied(false); // Reset copied state on new upload
       
       const fileId = uuidv4();
+      
+      // 1. Upload the PDF to Firebase Storage
       const storageRef = ref(storage, `pdfs/${fileId}.pdf`);
+      await uploadBytes(storageRef, file);
+      
+      // 2. Save the metadata to Firestore
+      const docRef = doc(db, "documents", fileId);
+      await setDoc(docRef, {
+        fileRef: `pdfs/${fileId}.pdf`,
+        signatureCoords: signatureCoords,
+        createdAt: new Date().toISOString()
+      });
 
-      // Execute both storage upload and Firestore write concurrently
-      await Promise.all([
-        uploadBytes(storageRef, file),
-        setDoc(doc(db, "documents", fileId), {
-          fileRef: `pdfs/${fileId}.pdf`,
-          signatureCoords: signatureCoords,
-          createdAt: new Date().toISOString()
-        })
-      ]);
-
-      // Use window.location.origin to create a robust link for any environment
+      // 3. Generate and display the Link
       const link = `${window.location.origin}/sign/${fileId}`;
       setGeneratedLink(link);
     } catch (error) {
-      // Log EXACT Firebase error
-      console.error("EXACT Firebase Error:", error);
+      // Log EXACT Firebase error clearly into the console
+      console.error("=== FIREBASE UPLOAD ERROR ===");
+      console.error(error);
       console.error("Error Code:", error?.code);
       console.error("Error Message:", error?.message);
-      alert(`Upload failed: ${error?.message || "Unknown error occurred"}`);
+      alert(`Upload failed: ${error?.message || "Unknown error occurred. Check browser console."}`);
     } finally {
-      // Explicitly clean up loading state so the UI never hangs
+      // Explicitly clean up loading state unconditionally so the UI never hangs
       setUploading(false);
     }
   };
