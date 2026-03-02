@@ -2,6 +2,40 @@ import { PDFDocument, rgb } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { initializeApp, getApps } from 'firebase/app';
 import { getStorage, ref, getBytes, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+// Resolve the directory of this module so we can locate the bundled font file
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = dirname(__filename);
+
+// Load the Heebo font (Hebrew-supporting) with a local-first, CDN-fallback strategy.
+// The local copy is bundled alongside the function; CDNs are used as a safety net.
+async function loadHeeboFont() {
+  // Prefer the locally-bundled copy — zero latency, no external dependency
+  try {
+    return readFileSync(join(__dirname, 'fonts', 'Heebo-Regular.ttf'));
+  } catch (_) {
+    // File not found in the bundle; fall through to network sources
+  }
+
+  const CDN_URLS = [
+    'https://raw.githubusercontent.com/google/fonts/main/ofl/heebo/Heebo%5Bwght%5D.ttf',
+    'https://fonts.gstatic.com/s/heebo/v26/NGSpv5_NC0k9P_v6ZUCbLRAHxK1EiSysdUmr.ttf',
+  ];
+
+  for (const url of CDN_URLS) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (res.ok) return Buffer.from(await res.arrayBuffer());
+    } catch (_) {
+      // This CDN failed — try the next one
+    }
+  }
+
+  throw new Error('All Hebrew font sources failed. Cannot embed a Hebrew-capable font in the PDF.');
+}
 
 const firebaseConfig = {
   apiKey: process.env.VITE_FIREBASE_API_KEY,
@@ -45,12 +79,8 @@ export default async function handler(req, res) {
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
     pdfDoc.registerFontkit(fontkit);
 
-    // Fetch and embed the Heebo font, which supports the full Hebrew Unicode block
-    const fontResponse = await fetch(
-      'https://cdn.jsdelivr.net/gh/google/fonts/ofl/heebo/Heebo-Regular.ttf'
-    );
-    if (!fontResponse.ok) throw new Error('Failed to download the Hebrew font.');
-    const fontBytes = await fontResponse.arrayBuffer();
+    // Load the Heebo font bytes using the local-first strategy defined above
+    const fontBytes = await loadHeeboFont();
     const hebrewFont = await pdfDoc.embedFont(fontBytes);
 
     // Embed the signature image only when the signer provided one

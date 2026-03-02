@@ -51,6 +51,12 @@ const SignerView = () => {
   const setField = (key, value) =>
     setGlobalFields((prev) => ({ ...prev, [key]: value }));
 
+  // Clear the signature pad and reset the signed flag
+  const handleClearSignature = () => {
+    sigCanvas.current?.clear();
+    setIsSigned(false);
+  };
+
   useEffect(() => {
     // Track the object URL so the cleanup function can revoke it without a stale closure
     let objectUrl = null;
@@ -113,42 +119,32 @@ const SignerView = () => {
     setNumPages(numPages);
   };
 
-  const handleBeginStroke = () => {
-    setIsSigned(true);
-  };
+  // Derive which field types are required based on the loaded markers
+  const hasSignature = markers.some((m) => !m.type || m.type === 'signature');
+  const hasFirstName = markers.some((m) => m.subtype === 'firstName');
+  const hasLastName  = markers.some((m) => m.subtype === 'lastName');
+  const hasDate      = markers.some((m) => m.subtype === 'date');
+
+  // All required fields are complete — controls button state and status message
+  const isFormReady =
+    (!hasSignature || isSigned) &&
+    (!hasFirstName || globalFields.firstName.trim() !== '') &&
+    (!hasLastName  || globalFields.lastName.trim()  !== '') &&
+    (!hasDate      || globalFields.date.trim()       !== '');
 
   const handleFinish = async () => {
-    const hasSignatureMarkers = markers.some((m) => !m.type || m.type === 'signature');
-    const hasFirstName = markers.some((m) => m.subtype === 'firstName');
-    const hasLastName  = markers.some((m) => m.subtype === 'lastName');
-
-    // Validate signature pad
-    if (hasSignatureMarkers && (!sigCanvas.current || sigCanvas.current.isEmpty())) {
-      alert('Please provide a signature first.');
-      return;
-    }
-    // Validate required text fields
-    if (hasFirstName && !globalFields.firstName.trim()) {
-      alert('Please enter your First Name in the footer bar.');
-      return;
-    }
-    if (hasLastName && !globalFields.lastName.trim()) {
-      alert('Please enter your Last Name in the footer bar.');
-      return;
-    }
-
+    if (!isFormReady) return;
     setIsSubmitting(true);
-
     try {
       // Build a per-marker-index formValues map that the API expects
       const formValues = {};
       markers.forEach((m, idx) => {
         if (m.subtype === 'firstName') formValues[idx] = globalFields.firstName;
         else if (m.subtype === 'lastName') formValues[idx] = globalFields.lastName;
-        else if (m.subtype === 'date')      formValues[idx] = globalFields.date;
+        else if (m.subtype === 'date')     formValues[idx] = globalFields.date;
       });
 
-      const signatureData = hasSignatureMarkers
+      const signatureData = hasSignature
         ? sigCanvas.current.getCanvas().toDataURL('image/png')
         : null;
 
@@ -159,17 +155,12 @@ const SignerView = () => {
       });
 
       const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Failed to sign the document.');
 
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to sign the document.');
-      }
-
-      // The API returns the direct download URL for the signed file
       setSignedPdfUrl(result.downloadUrl);
-      setIsCompleted(true); 
-      
+      setIsCompleted(true);
     } catch (error) {
-      console.error("Error during the signing process:", error);
+      console.error('Error during the signing process:', error);
       alert(`An error occurred: ${error.message}`);
     } finally {
       setIsSubmitting(false);
@@ -201,16 +192,15 @@ const SignerView = () => {
       
       {pdfUrl ? (
         <div className="pdf-document-container" style={{ textAlign: 'center' }}>
-          <Document 
-            file={pdfUrl} 
+          <Document
+            file={pdfUrl}
             onLoadSuccess={onDocumentLoadSuccess}
             loading={<div>Loading PDF...</div>}
             error={<div>Failed to load PDF. Check CORS settings in Firebase.</div>}
           >
             {Array.from(new Array(numPages), (el, index) => {
               const pageNumber = index + 1;
-              // All markers assigned to this page
-              // Preserve the global index so formValues keys stay consistent with the markers array
+              // Preserve the global index so formValues keys remain consistent with the markers array
               const pageMarkers = markers
                 .map((m, globalIdx) => ({ ...m, globalIdx }))
                 .filter((m) => m.page === pageNumber);
@@ -223,24 +213,17 @@ const SignerView = () => {
                     renderTextLayer={false}
                     renderAnnotationLayer={false}
                   />
-                  {/* Render each marker using the unified signature-marker style.
-                      For text/date markers the live value from globalFields is displayed. */}
                   {pageMarkers.map((marker) => {
-                    const isSignature = !marker.type || marker.type === 'signature';
-                    const fieldColor = getFieldColor(marker.subtype);
-                    const posStyle = {
-                      left: `${marker.nx * 100}%`,
-                      top: `${marker.ny * 100}%`,
-                      width: `${marker.nw * 100}%`,
-                      height: `${marker.nh * 100}%`,
-                    };
+                    const isSigMarker = !marker.type || marker.type === 'signature';
+                    const color = getFieldColor(marker.subtype || 'signature');
+                    const liveValue = !isSigMarker ? (globalFields[marker.subtype] || '') : '';
+                    const isEmpty = !isSigMarker && !liveValue;
 
-                    // Determine the text to display inside the overlay box
+                    // Show a checkmark on signed boxes; live value or placeholder for text fields
                     let overlayText;
-                    if (isSignature) {
-                      overlayText = 'Sign Here';
+                    if (isSigMarker) {
+                      overlayText = isSigned ? '✓' : 'Sign Here';
                     } else {
-                      const liveValue = globalFields[marker.subtype] || '';
                       overlayText = liveValue || getFieldLabel(marker);
                     }
 
@@ -249,13 +232,15 @@ const SignerView = () => {
                         key={marker.globalIdx}
                         className="signature-marker"
                         style={{
-                          ...posStyle,
-                          borderColor: fieldColor,
-                          backgroundColor: `${fieldColor}28`,
-                          color: fieldColor,
-                          // Show italic placeholder style when no value has been entered yet
-                          fontStyle: (!isSignature && !globalFields[marker.subtype]) ? 'italic' : 'normal',
-                          fontWeight: (!isSignature && globalFields[marker.subtype]) ? 700 : 600,
+                          left: `${marker.nx * 100}%`,
+                          top: `${marker.ny * 100}%`,
+                          width: `${marker.nw * 100}%`,
+                          height: `${marker.nh * 100}%`,
+                          borderColor: color,
+                          backgroundColor: `${color}22`,
+                          color,
+                          fontStyle: isEmpty ? 'italic' : 'normal',
+                          fontWeight: (!isSigMarker && liveValue) ? 700 : 600,
                         }}
                       >
                         {overlayText}
@@ -271,93 +256,104 @@ const SignerView = () => {
         <p>Loading document from the cloud...</p>
       )}
 
-      {/* Only render the signature pad when at least one signature-type marker exists */}
-      {markers.some((m) => !m.type || m.type === 'signature') && (
-        <div className="signature-area">
-          <p style={{ textAlign: 'left', margin: '0 0 10px 5px', fontWeight: 'bold' }}>
-            Signature
-          </p>
-          <div className="signature-pad-container">
-            <SignatureCanvas
-              ref={sigCanvas}
-              penColor="black"
-              onBegin={handleBeginStroke}
-              canvasProps={{ className: 'sigCanvas' }}
-            />
-            {!isSigned && <div className="signature-pad-placeholder">Sign Here</div>}
-          </div>
-        </div>
-      )}
-
-      {/* Sticky footer — always visible at the bottom while the document is being signed */}
+      {/* Sticky footer with unified form panel — one card per field type */}
       <div className="action-footer">
         <div className="action-footer-inner">
 
-          {/* Row 1: global text field inputs — only render each when markers of that type exist */}
-          {(markers.some((m) => m.subtype === 'firstName' || m.subtype === 'lastName' || m.subtype === 'date')) && (
-            <div className="footer-fields">
-              {markers.some((m) => m.subtype === 'firstName') && (
-                <div className="footer-input-group">
-                  <label className="footer-input-label" style={{ color: '#2563eb' }}>First Name</label>
-                  <input
-                    className="footer-input"
-                    type="text"
-                    placeholder="Your first name"
-                    value={globalFields.firstName}
-                    onChange={(e) => setField('firstName', e.target.value)}
-                    style={{ borderColor: '#2563eb' }}
-                    dir="auto"
-                  />
+          {markers.length > 0 && (
+            <div className="form-panel">
+
+              {/* Signature card */}
+              {hasSignature && (
+                <div className="form-card form-card--sig">
+                  <div className="form-card-header" style={{ color: '#e53e3e', borderBottomColor: '#e53e3e1a' }}>
+                    <span className="form-card-label">Signature</span>
+                    <button className="form-clear-btn" onClick={handleClearSignature} title="Clear signature">↺</button>
+                  </div>
+                  <div className="form-card-body">
+                    <div className="form-sig-wrap" style={{ borderColor: isSigned ? '#e53e3e55' : '#e0e0e0' }}>
+                      <SignatureCanvas
+                        ref={sigCanvas}
+                        penColor="#1a1a1a"
+                        onBegin={() => setIsSigned(true)}
+                        canvasProps={{ className: 'sigCanvas' }}
+                      />
+                      {!isSigned && <div className="form-sig-placeholder">Sign here</div>}
+                    </div>
+                  </div>
                 </div>
               )}
-              {markers.some((m) => m.subtype === 'lastName') && (
-                <div className="footer-input-group">
-                  <label className="footer-input-label" style={{ color: '#7c3aed' }}>Last Name</label>
-                  <input
-                    className="footer-input"
-                    type="text"
-                    placeholder="Your last name"
-                    value={globalFields.lastName}
-                    onChange={(e) => setField('lastName', e.target.value)}
-                    style={{ borderColor: '#7c3aed' }}
-                    dir="auto"
-                  />
+
+              {/* First Name card */}
+              {hasFirstName && (
+                <div className="form-card">
+                  <div className="form-card-header" style={{ color: '#2563eb', borderBottomColor: '#2563eb1a' }}>
+                    <span className="form-card-label">First Name</span>
+                  </div>
+                  <div className="form-card-body">
+                    <input
+                      className="form-card-input"
+                      type="text"
+                      placeholder="Enter first name"
+                      value={globalFields.firstName}
+                      onChange={(e) => setField('firstName', e.target.value)}
+                      style={{ '--card-accent': '#2563eb' }}
+                      dir="auto"
+                    />
+                  </div>
                 </div>
               )}
-              {markers.some((m) => m.subtype === 'date') && (
-                <div className="footer-input-group">
-                  <label className="footer-input-label" style={{ color: '#059669' }}>Date</label>
-                  <input
-                    className="footer-input"
-                    type="text"
-                    placeholder="DD/MM/YYYY"
-                    value={globalFields.date}
-                    onChange={(e) => setField('date', e.target.value)}
-                    style={{ borderColor: '#059669', color: '#059669' }}
-                  />
+
+              {/* Last Name card */}
+              {hasLastName && (
+                <div className="form-card">
+                  <div className="form-card-header" style={{ color: '#7c3aed', borderBottomColor: '#7c3aed1a' }}>
+                    <span className="form-card-label">Last Name</span>
+                  </div>
+                  <div className="form-card-body">
+                    <input
+                      className="form-card-input"
+                      type="text"
+                      placeholder="Enter last name"
+                      value={globalFields.lastName}
+                      onChange={(e) => setField('lastName', e.target.value)}
+                      style={{ '--card-accent': '#7c3aed' }}
+                      dir="auto"
+                    />
+                  </div>
                 </div>
               )}
+
+              {/* Date card */}
+              {hasDate && (
+                <div className="form-card">
+                  <div className="form-card-header" style={{ color: '#059669', borderBottomColor: '#0596691a' }}>
+                    <span className="form-card-label">Date</span>
+                  </div>
+                  <div className="form-card-body">
+                    <input
+                      className="form-card-input"
+                      type="text"
+                      placeholder="DD/MM/YYYY"
+                      value={globalFields.date}
+                      onChange={(e) => setField('date', e.target.value)}
+                      style={{ '--card-accent': '#059669' }}
+                    />
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
 
-          {/* Row 2: status message and action button */}
+          {/* Status line + action button */}
           <div className="footer-action-row">
-            <p className="action-footer-status">
-              {(() => {
-                const hasSig      = markers.some((m) => !m.type || m.type === 'signature');
-                const needsFName  = markers.some((m) => m.subtype === 'firstName');
-                const needsLName  = markers.some((m) => m.subtype === 'lastName');
-                const sigOk   = !hasSig  || isSigned;
-                const fnameOk = !needsFName || globalFields.firstName.trim() !== '';
-                const lnameOk = !needsLName || globalFields.lastName.trim() !== '';
-                return sigOk && fnameOk && lnameOk
-                  ? '\u2713 Ready to complete'
-                  : 'Please fill all required fields';
-              })()}
+            <p className={`action-footer-status${isFormReady ? ' ready' : ''}`}>
+              {isFormReady ? '✓ Ready to complete' : 'Please fill all required fields'}
             </p>
             <button
               onClick={handleFinish}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isFormReady}
               className="btn btn-success"
             >
               {isSubmitting ? 'Processing...' : 'Finish & Sign'}
