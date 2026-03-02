@@ -26,6 +26,9 @@ const SignerView = () => {
   const sigCanvas = useRef(null);
 
   useEffect(() => {
+    // Track the object URL so the cleanup function can revoke it without a stale closure
+    let objectUrl = null;
+
     const fetchDocument = async () => {
       if (!documentId) return;
 
@@ -33,31 +36,30 @@ const SignerView = () => {
         // Fetch placement metadata from Firestore
         const docRef = doc(db, "documents", documentId);
         const docSnap = await getDoc(docRef);
-        
+
         if (docSnap.exists() && docSnap.data().signatureCoords) {
           setSignatureCoords(docSnap.data().signatureCoords);
         }
 
         const fileRef = ref(storage, `pdfs/${documentId}.pdf`);
-        
+
         // Get the authenticated download URL
         let url = await getDownloadURL(fileRef);
 
-        // Force the URL to retrieve the media content (binary)
+        // Ensure the URL retrieves binary media content
         if (!url.includes('alt=media')) {
           url += (url.includes('?') ? '&' : '?') + 'alt=media';
         }
 
-        // Fetch the PDF as a blob to bypass potential CORS issues with react-pdf
+        // Fetch the PDF as a blob to avoid CORS issues with react-pdf
         const response = await fetch(url);
         if (!response.ok) {
           throw new Error('Failed to fetch the PDF file content.');
         }
-        
+
         const blob = await response.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        
-        setPdfUrl(blobUrl);
+        objectUrl = URL.createObjectURL(blob);
+        setPdfUrl(objectUrl);
 
       } catch (error) {
         console.error("Error fetching document:", error);
@@ -66,11 +68,12 @@ const SignerView = () => {
 
     fetchDocument();
 
-    // Clean up the object URL when component unmounts
+    // Revoke the object URL on unmount using the local variable, not the stale state value
     return () => {
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId]);
 
   const onDocumentLoadSuccess = ({ numPages }) => {
