@@ -20,10 +20,9 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 // Initialize Analytics if supported by the browser
-let analytics;
 isSupported().then((supported) => {
   if (supported) {
-    analytics = getAnalytics(app);
+    getAnalytics(app);
   }
 });
 

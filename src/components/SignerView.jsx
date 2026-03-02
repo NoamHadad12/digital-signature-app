@@ -70,6 +70,7 @@ const SignerView = () => {
     return () => {
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId]);
 
   const onDocumentLoadSuccess = ({ numPages }) => {
