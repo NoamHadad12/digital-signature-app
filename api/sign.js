@@ -1,4 +1,5 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, rgb } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
 import { initializeApp, getApps } from 'firebase/app';
 import { getStorage, ref, getBytes, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -11,6 +12,12 @@ const firebaseConfig = {
   appId: process.env.VITE_FIREBASE_APP_ID,
   measurementId: process.env.VITE_FIREBASE_MEASUREMENT_ID
 };
+
+// Detect whether a string contains Hebrew Unicode characters (U+0590–U+05FF)
+const containsHebrew = (str) => /[\u0590-\u05FF]/.test(str);
+
+// For RTL text, reverse character order so pdf-lib (which is LTR-only) renders it correctly
+const toRTLString = (str) => str.split('').reverse().join('');
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
@@ -34,8 +41,17 @@ export default async function handler(req, res) {
     // Download the original PDF bytes from Firebase Storage
     const existingPdfBytes = await getBytes(fileRef);
 
-    // Load the PDF document for modification
+    // Load the PDF and register fontkit so custom fonts (including Hebrew) can be embedded
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
+    pdfDoc.registerFontkit(fontkit);
+
+    // Fetch and embed the Heebo font, which supports the full Hebrew Unicode block
+    const fontResponse = await fetch(
+      'https://cdn.jsdelivr.net/gh/google/fonts/ofl/heebo/Heebo-Regular.ttf'
+    );
+    if (!fontResponse.ok) throw new Error('Failed to download the Hebrew font.');
+    const fontBytes = await fontResponse.arrayBuffer();
+    const hebrewFont = await pdfDoc.embedFont(fontBytes);
 
     // Embed the signature image only when the signer provided one
     let signatureImage = null;
@@ -43,9 +59,6 @@ export default async function handler(req, res) {
       const base64Data = signatureData.split(',')[1];
       signatureImage = await pdfDoc.embedPng(Buffer.from(base64Data, 'base64'));
     }
-
-    // Embed a standard font for rendering text and date fields
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
     const pages = pdfDoc.getPages();
 
@@ -86,20 +99,29 @@ export default async function handler(req, res) {
         const rawValue =
           formValues && formValues[markerIndex] != null ? String(formValues[markerIndex]) : '';
 
-        // The date value arrives already formatted as DD/MM/YYYY (e.g. 02/03/2026) from the client.
-        // Use it directly as the display string without any conversion.
-        const displayValue = rawValue;
-
-        if (displayValue) {
+        if (rawValue) {
           // Scale font size proportionally to the box height; clamp between 8 pt and 20 pt
           const fontSize = Math.max(8, Math.min(sigHeight * 0.55, 20));
           // Vertically center the text baseline within the bounding box
           const textY = targetY + (sigHeight - fontSize) / 2;
-          targetPage.drawText(displayValue, {
-            x: targetX + 4,
+
+          const isRTL = containsHebrew(rawValue);
+
+          // For RTL (Hebrew) text: reverse the glyph order and right-align inside the box.
+          // pdf-lib has no native BiDi engine, so manual reversal is required for correct display.
+          const textToRender = isRTL ? toRTLString(rawValue) : rawValue;
+
+          // Calculate rendered text width so we can right-align Hebrew text precisely
+          const textWidth = hebrewFont.widthOfTextAtSize(textToRender, fontSize);
+          const textX = isRTL
+            ? targetX + sigWidth - textWidth - 4   // right-aligned for RTL
+            : targetX + 4;                          // left-aligned for LTR
+
+          targetPage.drawText(textToRender, {
+            x: textX,
             y: textY,
             size: fontSize,
-            font,
+            font: hebrewFont,
             color: rgb(0.05, 0.05, 0.05),
             maxWidth: sigWidth - 8,
           });
@@ -110,21 +132,21 @@ export default async function handler(req, res) {
     // Serialize the modified PDF and upload it to Firebase Storage
     const pdfBytes = await pdfDoc.save();
     const signedFileRef = ref(storage, `pdfs/signed_${documentId}.pdf`);
-    
+
     const metadata = { contentType: 'application/pdf' };
     await uploadBytes(signedFileRef, pdfBytes, metadata);
 
     // Generate a public download URL with a token
     const downloadUrl = await getDownloadURL(signedFileRef);
 
-    res.status(200).json({ 
-      message: 'Success', 
+    res.status(200).json({
+      message: 'Success',
       fileName: `signed_${documentId}.pdf`,
-      downloadUrl: downloadUrl 
+      downloadUrl: downloadUrl
     });
 
   } catch (error) {
-    console.error("Backend Error:", error);
+    console.error('Backend Error:', error);
     res.status(500).json({ error: error.message });
   }
 }

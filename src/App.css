@@ -396,28 +396,22 @@ body {
 }
 
 .footer-input {
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: 1.5px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--border-radius);
   font-family: var(--font-family);
   font-size: 0.9rem;
   font-weight: 500;
   outline: none;
-  background: #fafafa;
-  transition: border-color 0.15s;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
   color: var(--text-color);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 
 .footer-input:focus {
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.15);
-}
-
-.footer-input--readonly {
-  cursor: default;
-  background: #f0fdf8;
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.18), 0 1px 3px rgba(0,0,0,0.06);
 }
 
 /* Row that holds the status text and the action button */

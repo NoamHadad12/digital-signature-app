@@ -306,6 +306,7 @@ const SignerView = () => {
                     value={globalFields.firstName}
                     onChange={(e) => setField('firstName', e.target.value)}
                     style={{ borderColor: '#2563eb' }}
+                    dir="auto"
                   />
                 </div>
               )}
@@ -319,6 +320,7 @@ const SignerView = () => {
                     value={globalFields.lastName}
                     onChange={(e) => setField('lastName', e.target.value)}
                     style={{ borderColor: '#7c3aed' }}
+                    dir="auto"
                   />
                 </div>
               )}
@@ -326,10 +328,11 @@ const SignerView = () => {
                 <div className="footer-input-group">
                   <label className="footer-input-label" style={{ color: '#059669' }}>Date</label>
                   <input
-                    className="footer-input footer-input--readonly"
+                    className="footer-input"
                     type="text"
+                    placeholder="DD/MM/YYYY"
                     value={globalFields.date}
-                    readOnly
+                    onChange={(e) => setField('date', e.target.value)}
                     style={{ borderColor: '#059669', color: '#059669' }}
                   />
                 </div>
