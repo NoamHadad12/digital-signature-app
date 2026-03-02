@@ -17,7 +17,8 @@ const SignatureCanvas = SignaturePad.default || SignaturePad;
 const SignerView = () => {
   const { documentId } = useParams();
   const [pdfUrl, setPdfUrl] = useState(null);
-  const [signatureCoords, setSignatureCoords] = useState(null);
+  // markers is an array of { page, nx, ny, nw, nh }
+  const [markers, setMarkers] = useState([]);
   const [numPages, setNumPages] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
@@ -34,11 +35,17 @@ const SignerView = () => {
 
       try {
         // Fetch placement metadata from Firestore
-        const docRef = doc(db, "documents", documentId);
+        const docRef = doc(db, 'documents', documentId);
         const docSnap = await getDoc(docRef);
 
-        if (docSnap.exists() && docSnap.data().signatureCoords) {
-          setSignatureCoords(docSnap.data().signatureCoords);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          // Support the new markers array and legacy single signatureCoords field
+          if (Array.isArray(data.markers) && data.markers.length > 0) {
+            setMarkers(data.markers);
+          } else if (data.signatureCoords) {
+            setMarkers([data.signatureCoords]);
+          }
         }
 
         const fileRef = ref(storage, `pdfs/${documentId}.pdf`);
@@ -98,11 +105,7 @@ const SignerView = () => {
       const response = await fetch('/api/sign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          documentId, 
-          signatureData,
-          signatureCoords
-        }),
+        body: JSON.stringify({ documentId, signatureData, markers }),
       });
 
       const result = await response.json();
@@ -156,28 +159,32 @@ const SignerView = () => {
           >
             {Array.from(new Array(numPages), (el, index) => {
               const pageNumber = index + 1;
+              // All markers assigned to this page
+              const pageMarkers = markers.filter((m) => m.page === pageNumber);
+
               return (
                 <div key={`page_${pageNumber}`} className="pdf-page-wrapper">
-                  <Page 
-                    pageNumber={pageNumber} 
-                    width={Math.min(window.innerWidth - 40, 600)} 
-                    renderTextLayer={false} 
-                    renderAnnotationLayer={false} 
+                  <Page
+                    pageNumber={pageNumber}
+                    width={Math.min(window.innerWidth - 40, 600)}
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
                   />
-                  {/* Overlay the bounding box so the signer knows exactly where to sign */}
-                  {signatureCoords && signatureCoords.page === pageNumber && (
-                    <div 
-                      className="signature-marker" 
+                  {/* Render every marker assigned to this page */}
+                  {pageMarkers.map((marker, i) => (
+                    <div
+                      key={i}
+                      className="signature-marker"
                       style={{
-                        left: `${signatureCoords.nx * 100}%`,
-                        top: `${signatureCoords.ny * 100}%`,
-                        width: `${(signatureCoords.nw || 0.3) * 100}%`,
-                        height: `${(signatureCoords.nh || 0.08) * 100}%`,
+                        left: `${marker.nx * 100}%`,
+                        top: `${marker.ny * 100}%`,
+                        width: `${marker.nw * 100}%`,
+                        height: `${marker.nh * 100}%`,
                       }}
                     >
                       Sign Here
                     </div>
-                  )}
+                  ))}
                 </div>
               );
             })}

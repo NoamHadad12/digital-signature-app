@@ -141,9 +141,7 @@ body {
 
 .signature-marker {
   position: absolute;
-  transform: translate(-50%, -50%);
-  width: 150px;
-  height: 50px;
+  /* No translate offset — coordinates are top-left anchored */
   border: 2px dashed #ff3b30;
   background-color: rgba(255, 59, 48, 0.2);
   display: flex;
@@ -155,6 +153,31 @@ body {
   border-radius: 4px;
   box-shadow: 0 2px 5px rgba(0,0,0,0.2);
   z-index: 10;
+  overflow: hidden;
+  font-size: clamp(0.6rem, 2vw, 0.85rem);
+}
+
+/* Remove button shown on each marker in UploadView */
+.marker-remove-btn {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  background: rgba(201, 42, 42, 0.85);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  font-size: 0.75rem;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  cursor: pointer;
+  pointer-events: all;
+  padding: 0;
+}
+
+.marker-remove-btn:hover {
+  background: #c92a2a;
 }
 
 .pdf-document-container {

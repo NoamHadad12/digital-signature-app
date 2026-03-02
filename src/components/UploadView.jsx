@@ -14,7 +14,8 @@ const UploadView = () => {
   const [file, setFile] = useState(null);
   const [fileUrl, setFileUrl] = useState(null);
   const [numPages, setNumPages] = useState(null);
-  const [signatureCoords, setSignatureCoords] = useState(null);
+  // markers is an array of { page, nx, ny, nw, nh } — one entry per drawn box
+  const [markers, setMarkers] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [generatedLink, setGeneratedLink] = useState('');
   const [isCopied, setIsCopied] = useState(false);
@@ -31,7 +32,7 @@ const UploadView = () => {
     setFile(selectedFile);
     setGeneratedLink(''); // Reset link on new upload
     setIsCopied(false); // Reset copied state on new upload
-    setSignatureCoords(null);
+    setMarkers([]);
     
     if (selectedFile) {
       setFileUrl(URL.createObjectURL(selectedFile));
@@ -55,7 +56,6 @@ const UploadView = () => {
     setIsDrawing(true);
     setDrawStart({ nx, ny });
     setDrawingBox(null);
-    setSignatureCoords(null); // Clear any previous selection
   };
 
   // Update the live preview box while the user drags
@@ -85,40 +85,48 @@ const UploadView = () => {
     const boxNh = Math.abs(ny - drawStart.ny);
     setIsDrawing(false);
     setDrawingBox(null);
-    // Only save if the box is large enough to be intentional (> 1% in both dimensions)
+    // Only add the marker if the box is large enough to be intentional (> 1% in both dimensions)
     if (boxNw > 0.01 && boxNh > 0.01) {
-      setSignatureCoords({ page: pageNumber, nx: boxNx, ny: boxNy, nw: boxNw, nh: boxNh });
+      setMarkers((prev) => [
+        ...prev,
+        { page: pageNumber, nx: boxNx, ny: boxNy, nw: boxNw, nh: boxNh },
+      ]);
     }
+  };
+
+  // Remove a specific marker by its index in the global markers array
+  const handleRemoveMarker = (indexToRemove) => {
+    setMarkers((prev) => prev.filter((_, i) => i !== indexToRemove));
   };
 
   const handleUpload = async () => {
     if (!file) {
-      alert("Please select a PDF file first");
+      alert('Please select a PDF file first.');
       return;
     }
-    if (!signatureCoords) {
-      alert("Please drag on the document to draw the signature area.");
+    if (markers.length === 0) {
+      alert('Please drag on the document to draw at least one signature area.');
       return;
     }
     
     setUploading(true);
 
     try {
-      setGeneratedLink(''); // Reset link on new upload
-      setIsCopied(false); // Reset copied state on new upload
-      
+      setGeneratedLink('');
+      setIsCopied(false);
+
       const fileId = uuidv4();
-      
-      // 1. Upload the PDF to Firebase Storage
+
+      // Upload the PDF to Firebase Storage
       const storageRef = ref(storage, `pdfs/${fileId}.pdf`);
       await uploadBytes(storageRef, file);
-      
-      // 2. Save the metadata to Firestore
-      const docRef = doc(db, "documents", fileId);
+
+      // Save metadata with the markers array to Firestore
+      const docRef = doc(db, 'documents', fileId);
       await setDoc(docRef, {
         fileRef: `pdfs/${fileId}.pdf`,
-        signatureCoords: signatureCoords,
-        createdAt: new Date().toISOString()
+        markers: markers,
+        createdAt: new Date().toISOString(),
       });
 
       // 3. Generate and display the Link
@@ -169,8 +177,11 @@ const UploadView = () => {
       {/* Render PDF Preview to select signature location */}
       {fileUrl && !generatedLink && (
         <div style={{ marginTop: '20px' }}>
-          <p style={{ fontWeight: 600, color: 'var(--primary-color)', marginBottom: '15px' }}>
-            Action Required: Click and drag on the document to draw the signature area.
+          <p style={{ fontWeight: 600, color: 'var(--primary-color)', marginBottom: '5px' }}>
+            Action Required: Click and drag on the document to draw signature areas.
+          </p>
+          <p style={{ color: 'var(--text-light-color)', fontSize: '0.9rem', marginBottom: '15px' }}>
+            You can draw multiple boxes. Click the &times; on a box to remove it.
           </p>
           <div className="pdf-document-container" style={{ textAlign: 'center' }}>
             <Document 
@@ -180,22 +191,27 @@ const UploadView = () => {
             >
               {Array.from(new Array(numPages), (el, index) => {
                 const pageNumber = index + 1;
+                // All confirmed markers that belong to this page, with their global index
+                const pageMarkers = markers
+                  .map((m, i) => ({ ...m, globalIndex: i }))
+                  .filter((m) => m.page === pageNumber);
+
                 return (
-                  <div 
-                    key={`page_${pageNumber}`} 
+                  <div
+                    key={`page_${pageNumber}`}
                     className="pdf-page-wrapper"
                     style={{ cursor: 'crosshair', userSelect: 'none' }}
                     onMouseDown={(e) => handleMouseDown(e, pageNumber)}
                     onMouseMove={(e) => handleMouseMove(e, pageNumber)}
                     onMouseUp={(e) => handleMouseUp(e, pageNumber)}
                   >
-                    <Page 
-                      pageNumber={pageNumber} 
-                      width={Math.min(window.innerWidth - 80, 550)} 
-                      renderTextLayer={false} 
-                      renderAnnotationLayer={false} 
+                    <Page
+                      pageNumber={pageNumber}
+                      width={Math.min(window.innerWidth - 80, 550)}
+                      renderTextLayer={false}
+                      renderAnnotationLayer={false}
                     />
-                    {/* Live preview rectangle while the user is dragging */}
+                    {/* Live preview rectangle while the user is dragging on this page */}
                     {isDrawing && currentPageRef.current === pageNumber && drawingBox && (
                       <div
                         style={{
@@ -210,33 +226,52 @@ const UploadView = () => {
                         }}
                       />
                     )}
-                    {/* Confirmed bounding box rendered after the user releases the mouse */}
-                    {signatureCoords && signatureCoords.page === pageNumber && (
-                      <div 
-                        className="signature-marker" 
+                    {/* Render all confirmed markers for this page */}
+                    {pageMarkers.map((marker) => (
+                      <div
+                        key={marker.globalIndex}
+                        className="signature-marker"
                         style={{
-                          left: `${signatureCoords.nx * 100}%`,
-                          top: `${signatureCoords.ny * 100}%`,
-                          width: `${signatureCoords.nw * 100}%`,
-                          height: `${signatureCoords.nh * 100}%`,
+                          left: `${marker.nx * 100}%`,
+                          top: `${marker.ny * 100}%`,
+                          width: `${marker.nw * 100}%`,
+                          height: `${marker.nh * 100}%`,
                         }}
                       >
-                        Sign Here
+                        <span>Sign Here</span>
+                        {/* Remove button stops propagation so it does not start a new drag */}
+                        <button
+                          className="marker-remove-btn"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveMarker(marker.globalIndex);
+                          }}
+                          title="Remove this signature area"
+                        >
+                          &times;
+                        </button>
                       </div>
-                    )}
+                    ))}
                   </div>
                 );
               })}
             </Document>
           </div>
           
-          <button 
-            onClick={handleUpload} 
-            disabled={uploading || !signatureCoords}
+          {markers.length > 0 && (
+            <p style={{ color: 'var(--text-light-color)', fontSize: '0.9rem', marginTop: '10px' }}>
+              {markers.length} signature area{markers.length > 1 ? 's' : ''} defined.
+            </p>
+          )}
+
+          <button
+            onClick={handleUpload}
+            disabled={uploading || markers.length === 0}
             className="btn btn-primary"
             style={{ marginTop: '20px', width: '100%' }}
           >
-            {uploading ? "Uploading Data..." : "Upload & Generate Link"}
+            {uploading ? 'Uploading Data...' : 'Upload & Generate Link'}
           </button>
         </div>
       )}

@@ -1,4 +1,4 @@
-import { PDFDocument, rgb } from 'pdf-lib';
+import { PDFDocument } from 'pdf-lib';
 import { initializeApp, getApps } from 'firebase/app';
 import { getStorage, ref, getBytes, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -15,62 +15,63 @@ const firebaseConfig = {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
 
-  const { documentId, signatureData, signatureCoords } = req.body;
+  // Accept the new markers array; fall back to legacy single signatureCoords object
+  const { documentId, signatureData, markers, signatureCoords } = req.body;
+
+  // Normalize to an array so the rest of the handler always works with one format
+  let resolvedMarkers = [];
+  if (Array.isArray(markers) && markers.length > 0) {
+    resolvedMarkers = markers;
+  } else if (signatureCoords) {
+    resolvedMarkers = [signatureCoords];
+  }
 
   try {
     const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
     const storage = getStorage(app);
     const fileRef = ref(storage, `pdfs/${documentId}.pdf`);
 
-    // 1. Download original PDF
+    // Download the original PDF bytes from Firebase Storage
     const existingPdfBytes = await getBytes(fileRef);
 
-    // 2. Load PDF for modifying (pdf-lib)
+    // Load the PDF document for modification
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
     const base64Data = signatureData.split(',')[1];
     const signatureImage = await pdfDoc.embedPng(Buffer.from(base64Data, 'base64'));
 
     const pages = pdfDoc.getPages();
-    
-    // Choose specific page based on uploaded configuration (convert 1-based index to 0-based)
-    const targetPageNum = signatureCoords ? signatureCoords.page - 1 : pages.length - 1;
-    const targetPage = pages[targetPageNum];
-    const { width, height } = targetPage.getSize();
 
-    // Scale the signature box using the stored normalized bounding box (nw, nh)
-    // Fall back to sensible defaults for documents created before the bounding box upgrade
-    const sigWidth = (signatureCoords?.nw ?? 0.3) * width;
-    const sigHeight = (signatureCoords?.nh ?? 0.08) * height;
+    // Draw the signature image at every marker location defined by the admin
+    for (const marker of resolvedMarkers) {
+      // Convert 1-based page number to 0-based index; default to the last page
+      const targetPageIndex = marker.page != null ? marker.page - 1 : pages.length - 1;
+      const targetPage = pages[targetPageIndex];
 
-    // Default to bottom-right corner if no coords are stored
-    let targetX = width - sigWidth - 15;
-    let targetY = 30;
+      if (!targetPage) continue; // Skip if the stored page number is out of range
 
-    if (signatureCoords) {
-      // Map normalized top-left (nx, ny) to pdf-lib coordinates
-      // pdf-lib Y-axis runs bottom-to-top, so we invert and subtract the box height
-      targetX = signatureCoords.nx * width;
-      targetY = (1 - signatureCoords.ny - (signatureCoords.nh ?? 0.08)) * height;
+      const { width, height } = targetPage.getSize();
+
+      // Scale the bounding box from normalized units to PDF point units
+      const sigWidth = (marker.nw ?? 0.3) * width;
+      const sigHeight = (marker.nh ?? 0.08) * height;
+
+      // Map normalized top-left (nx, ny) to pdf-lib coordinates.
+      // pdf-lib uses a bottom-to-top Y axis, so we invert and subtract the box height.
+      const targetX = (marker.nx ?? 0) * width;
+      const targetY = (1 - (marker.ny ?? 0) - (marker.nh ?? 0.08)) * height;
+
+      // Draw the signature PNG scaled exactly to the admin-defined bounding box.
+      // No decorative underline — the signature floats as a transparent PNG.
+      targetPage.drawImage(signatureImage, {
+        x: targetX,
+        y: targetY,
+        width: sigWidth,
+        height: sigHeight,
+        opacity: 0.95,
+      });
     }
 
-    // Draw the signature image scaled exactly to the bounding box the admin defined
-    targetPage.drawImage(signatureImage, {
-      x: targetX,
-      y: targetY,
-      width: sigWidth,
-      height: sigHeight,
-      opacity: 0.95,
-    });
-
-    // Draw a thin underline beneath the signature for a professional finish
-    targetPage.drawLine({
-      start: { x: targetX, y: targetY - 3 },
-      end: { x: targetX + sigWidth, y: targetY - 3 },
-      thickness: 1.5,
-      color: rgb(0.1, 0.1, 0.1),
-    });
-
-    // 4. Save and Upload
+    // Serialize the modified PDF and upload it to Firebase Storage
     const pdfBytes = await pdfDoc.save();
     const signedFileRef = ref(storage, `pdfs/signed_${documentId}.pdf`);
     
