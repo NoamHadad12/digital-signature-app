@@ -47,47 +47,77 @@ const firebaseConfig = {
   measurementId: process.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-// Returns true when the string contains at least one Hebrew Unicode character (U+0590–U+05FF).
+// True when the string contains at least one Hebrew Unicode character (U+0590–U+05FF).
 const containsHebrew = (str) => /[\u0590-\u05FF]/.test(str);
 
-// Apply Visual RTL transformation for pdf-lib, which has no BiDi engine and draws LTR only.
+// Logical-to-Visual conversion for Hebrew text rendered by pdf-lib (LTR-only engine).
 //
-// Algorithm (word-boundary BiDi):
-//   1. Split the text at every space into individual word tokens.
-//   2. Reverse the ORDER of those tokens so the overall reading direction becomes RTL.
-//   3. Within each token:
-//        - If it contains Hebrew characters → reverse the characters inside it.
-//        - If it is a pure LTR token (digits, Latin, punctuation) → leave it unchanged,
-//          so numbers and IDs do not end up scrambled.
-//   4. Re-join with spaces and return the result for pdf-lib to render left-to-right.
+// pdf-lib has no built-in BiDi engine: it draws every character strictly left-to-right.
+// We must therefore produce a "visual order" string — one that looks correct to a Hebrew
+// reader when drawn LTR — by pre-processing the text here on the server.
 //
-// Worked examples (→ pdf-lib renders LTR → Hebrew reader reads right-to-left):
+// Algorithm (character-level run BiDi):
+//   1. Walk the string one character at a time and classify each character:
+//        H  = Hebrew (U+0590–U+05FF)
+//        L  = LTR (Latin letters A-Za-z and digits 0-9)
+//        neutral  = everything else (spaces, punctuation)
+//   2. Group consecutive same-direction characters into "runs".
+//      Neutral characters (spaces, punctuation) are absorbed into the current run so that
+//      inter-word spaces stay attached to adjacent Hebrew words rather than becoming
+//      orphan boundaries that break visual alignment.
+//   3. Reverse the ORDER of the runs (paragraph-level RTL direction flip).
+//   4. Within each Hebrew run, reverse the individual characters (glyph-level RTL flip).
+//      LTR runs (numbers, Latin) are left unchanged so digits are not scrambled.
+//   5. Concatenate and return.
 //
-//   "נועם חדד"
-//     tokens : ["נועם",  "חדד"]
-//     reverse: ["חדד",   "נועם"]
-//     map    : ["דדח",   "מעונ"]     ← each Hebrew token reversed
-//     result : "דדח מעונ"            → reader sees "נועם חדד" ✓
+// Examples (pdf-lib draws the result LTR; a Hebrew reader sees it correctly RTL):
 //
-//   "נועם 123"
-//     tokens : ["נועם",  "123"]
-//     reverse: ["123",   "נועם"]
-//     map    : ["123",   "מעונ"]     ← number token kept intact
-//     result : "123 מעונ"            → reader sees "נועם 123" ✓
+//   "נועם חדד"  → one Hebrew run "נועם חדד" reversed char-by-char  → "דדח מעונ"
+//                  reader RTL: נ-ו-ע-ם-space-ח-ד-ד  = "נועם חדד" ✓
 //
-//   "John Smith"  → returned unchanged (no Hebrew detected) ✓
-const reverseText = (text) => {
-  if (!containsHebrew(text)) return text; // Pure LTR — nothing to do
+//   "נועם 123"  → Hebrew run "נועם " + LTR run "123"
+//                  reversed run order → LTR "123" + Hebrew "נועם "
+//                  char-reverse Hebrew run → "123" + " מעונ"  → "123 מעונ"
+//                  reader RTL: נ-ו-ע-ם-space-1-2-3  = "נועם 123" ✓
+//
+//   "John Smith" → no Hebrew detected → returned unchanged ✓
+const toVisualRTL = (text) => {
+  if (!containsHebrew(text)) return text; // Pure LTR string — nothing to do
 
-  return text
-    .split(' ')
+  const HEBREW_RE = /[\u0590-\u05FF]/;
+  const LTR_RE    = /[A-Za-z0-9]/;
+
+  // Build an array of directional runs
+  const runs = []; // [{ type: 'H'|'L', text: string }]
+
+  for (const ch of text) {
+    // Classify this character; neutral chars inherit the current run's direction
+    const type = HEBREW_RE.test(ch) ? 'H' : LTR_RE.test(ch) ? 'L' : null;
+
+    if (runs.length === 0) {
+      // First character — open the initial run (default neutral to Hebrew)
+      runs.push({ type: type ?? 'H', text: ch });
+    } else if (type === null) {
+      // Neutral character (space, punctuation) — attach to the active run
+      runs[runs.length - 1].text += ch;
+    } else if (runs[runs.length - 1].type === type) {
+      // Same direction as the active run — extend it
+      runs[runs.length - 1].text += ch;
+    } else {
+      // Direction switch — close the active run and open a new one
+      runs.push({ type, text: ch });
+    }
+  }
+
+  // Reverse run order then reverse characters within each Hebrew run
+  return runs
     .reverse()
-    .map((token) =>
-      containsHebrew(token)
-        ? token.split('').reverse().join('') // Hebrew token — reverse individual characters
-        : token                              // LTR token (digits, Latin) — keep as-is
+    .map((run) =>
+      run.type === 'H'
+        ? run.text.split('').reverse().join('') // Hebrew: reverse individual characters
+        : run.text                              // LTR: keep digits/Latin chars intact
     )
-    .join(' ');
+    .join('');
 };
 
 export default async function handler(req, res) {
@@ -172,9 +202,9 @@ export default async function handler(req, res) {
           // Vertically center the text baseline within the bounding box
           const textY = targetY + (sigHeight - fontSize) / 2;
 
-          // Apply Visual BiDi: reverse Hebrew tokens for LTR rendering; preserve LTR tokens intact
-          const textToRender = reverseText(rawValue);
-          const isRTL = containsHebrew(rawValue); // Alignment is based on the original input
+          // Convert to visual RTL order for pdf-lib (character-level run BiDi)
+          const textToRender = toVisualRTL(rawValue);
+          const isRTL = containsHebrew(rawValue); // Right-align when the input contains Hebrew
 
           // Right-align reversed (RTL) text using the measured text width
           const textWidth = hebrewFont.widthOfTextAtSize(textToRender, fontSize);
