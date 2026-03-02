@@ -62,29 +62,35 @@ const UploadView = () => {
     }
     
     setUploading(true);
-    setGeneratedLink(''); // Reset link on new upload
-    setIsCopied(false); // Reset copied state on new upload
-    const fileId = uuidv4();
-    const storageRef = ref(storage, `pdfs/${fileId}.pdf`);
 
     try {
-      // Upload the PDF to storage
-      await uploadBytes(storageRef, file);
+      setGeneratedLink(''); // Reset link on new upload
+      setIsCopied(false); // Reset copied state on new upload
       
-      // Save the placement coordinates and file reference into Firestore
-      await setDoc(doc(db, "documents", fileId), {
-        fileRef: `pdfs/${fileId}.pdf`,
-        signatureCoords: signatureCoords,
-        createdAt: new Date().toISOString()
-      });
+      const fileId = uuidv4();
+      const storageRef = ref(storage, `pdfs/${fileId}.pdf`);
+
+      // Execute both storage upload and Firestore write concurrently
+      await Promise.all([
+        uploadBytes(storageRef, file),
+        setDoc(doc(db, "documents", fileId), {
+          fileRef: `pdfs/${fileId}.pdf`,
+          signatureCoords: signatureCoords,
+          createdAt: new Date().toISOString()
+        })
+      ]);
 
       // Use window.location.origin to create a robust link for any environment
       const link = `${window.location.origin}/sign/${fileId}`;
       setGeneratedLink(link);
     } catch (error) {
-      console.error("Upload failed:", error);
-      alert(`Upload failed: ${error.message}`);
+      // Log EXACT Firebase error
+      console.error("EXACT Firebase Error:", error);
+      console.error("Error Code:", error?.code);
+      console.error("Error Message:", error?.message);
+      alert(`Upload failed: ${error?.message || "Unknown error occurred"}`);
     } finally {
+      // Explicitly clean up loading state so the UI never hangs
       setUploading(false);
     }
   };
