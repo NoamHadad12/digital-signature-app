@@ -29,7 +29,8 @@ const SignerView = () => {
     const fetchDocument = async () => {
       if (!documentId) return;
 
-      tr// Fetch placement metadata from Firestore
+      try {
+        // Fetch placement metadata from Firestore
         const docRef = doc(db, "documents", documentId);
         const docSnap = await getDoc(docRef);
         
@@ -37,7 +38,6 @@ const SignerView = () => {
           setSignatureCoords(docSnap.data().signatureCoords);
         }
 
-        y {
         const fileRef = ref(storage, `pdfs/${documentId}.pdf`);
         
         // Get the authenticated download URL
@@ -87,10 +87,6 @@ const SignerView = () => {
     }
 
     setIsSubmitting(true);
-          documentId, 
-          signatureData,
-          signatureCoords
-       
 
     try {
       const signatureData = sigCanvas.current.getCanvas().toDataURL('image/png');
@@ -98,7 +94,11 @@ const SignerView = () => {
       const response = await fetch('/api/sign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId, signatureData }),
+        body: JSON.stringify({ 
+          documentId, 
+          signatureData,
+          signatureCoords
+        }),
       });
 
       const result = await response.json();
@@ -131,7 +131,19 @@ const SignerView = () => {
           target="_blank" 
           rel="noopener noreferrer"
           className="btn btn-primary"
-        > style={{ textAlign: 'center' }}>
+        >
+          Download Your Copy
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="signer-view">
+      <h1>Sign Document</h1>
+      
+      {pdfUrl ? (
+        <div className="pdf-document-container" style={{ textAlign: 'center' }}>
           <Document 
             file={pdfUrl} 
             onLoadSuccess={onDocumentLoadSuccess}
@@ -162,19 +174,7 @@ const SignerView = () => {
                   )}
                 </div>
               );
-            }nLoadSuccess={onDocumentLoadSuccess}
-            loading={<div>Loading PDF...</div>}
-            error={<div>Failed to load PDF. Check CORS settings in Firebase.</div>}
-          >
-            {Array.from(new Array(numPages), (el, index) => (
-              <Page 
-                key={`page_${index + 1}`} 
-                pageNumber={index + 1} 
-                width={Math.min(window.innerWidth - 40, 600)} 
-                renderTextLayer={false} 
-                renderAnnotationLayer={false} 
-              />
-            ))}
+            })}
           </Document>
         </div>
       ) : (

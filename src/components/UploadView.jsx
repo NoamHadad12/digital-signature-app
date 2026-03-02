@@ -101,7 +101,19 @@ const UploadView = () => {
   const shareOnWhatsApp = () => {
     const message = `You've been sent a document to sign: ${generatedLink}`;
     const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
-    window.open(whathandleFileChange} 
+    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  return (
+    <div className="upload-view">
+      <h1>SignFlow</h1>
+      <p className="subtitle">Upload a PDF document to generate a shareable signing link.</p>
+      
+      <div className="drop-zone">
+        <input 
+          type="file" 
+          accept="application/pdf" 
+          onChange={handleFileChange} 
           className="file-input"
         />
       </div>
@@ -159,19 +171,7 @@ const UploadView = () => {
             {uploading ? "Uploading Data..." : "Upload & Generate Link"}
           </button>
         </div>
-      )}setFile(e.target.files[0]);
-            setGeneratedLink(''); // Clear link when a new file is selected
-          }} 
-          className="file-input"
-        />
-        <button 
-          onClick={handleUpload} 
-          disabled={uploading || !file}
-          className="btn btn-primary"
-        >
-          {uploading ? "Uploading..." : "Upload & Generate Link"}
-        </button>
-      </div>
+      )}
 
       {generatedLink && (
         <div className="generated-link-container">
