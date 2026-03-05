@@ -18,7 +18,7 @@ export const config = {
 
 // ---------------------------------------------------------------------------
 // callGemini
-// Sends the raw PDF (as base64) to Gemini 1.5 Flash via the official SDK.
+// Sends the raw PDF (as base64) to Gemini 2.5 Flash via the official SDK.
 // ---------------------------------------------------------------------------
 async function callGemini(base64Pdf) {
   // Force trim to eliminate hidden newlines or spaces Vercel can inject into env vars.
@@ -47,7 +47,7 @@ async function callGemini(base64Pdf) {
   
   const model = genAI.getGenerativeModel(
     {
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       generationConfig: {
         temperature:     0.05,
         maxOutputTokens: 2048,
@@ -83,7 +83,7 @@ Example valid output:
   { "type": "customText", "label": "Full Name",  "page": 1, "nx": 0.05, "ny": 0.55, "nw": 0.40, "nh": 0.05, "confidence": 0.88 }
 ]`;
 
-  console.log("[STRICT DEBUG] Calling Gemini v1 with model: gemini-1.5-flash");
+  console.log("[STRICT DEBUG] Calling Gemini v1 with model: gemini-2.5-flash");
 
   // Send the prompt text + PDF inline data. 
   // cleanBase64 has had any data-URI prefix stripped, so only raw base64 is sent.
