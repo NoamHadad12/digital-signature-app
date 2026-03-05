@@ -66,7 +66,7 @@ async function callGemini(base64Pdf) {
  // ---------------------------------------------------------------------------
   // Prompt engineering - Optimized for visually reversed Hebrew text
   // ---------------------------------------------------------------------------
-  const SYSTEM_PROMPT = `You are a visual document layout analyzer. Visually scan the document and find every blank horizontal line intended for input, signatures, or dates. Calculate the ACTUAL relative X and Y coordinates (0.0 to 1.0) for each field. Return ONLY a valid JSON array. Here is an example of the expected format showing two fields with DIFFERENT coordinates to demonstrate that you must calculate unique positions for every line you find: [{"type": "date", "label": "Date Field", "nx": 0.15, "ny": 0.22, "nw": 0.2, "nh": 0.05, "page": 1}, {"type": "signature", "label": "Signature Field", "nx": 0.60, "ny": 0.85, "nw": 0.2, "nh": 0.05, "page": 1}].`;
+  const SYSTEM_PROMPT = `Analyze this document and determine what fields a user needs to fill out (e.g., signatures, dates, names). Return ONLY a valid JSON array of the required fields. Do NOT calculate coordinates. Schema: [{"type": "signature" | "date" | "customText", "label": "Detected Field Name"}].`;
 
   console.log("[FINAL TEST] Calling Gemini v1beta with model: gemini-2.5-flash");
 
@@ -103,16 +103,16 @@ async function callGemini(base64Pdf) {
     return [];
   }
 
-  // Clamp all coordinates to [0, 1] and guarantee required fields are present
+  // Assign default cascading coordinates — the user will drag fields into position.
   return suggestions.map((s, i) => ({
     type:       s.type || 'customText',
     label:      s.label || s.type || 'Field',
     page:       s.page  ?? 1,
-    nx:         Math.max(0, Math.min(1, Number(s.nx)  || 0)),
-    ny:         Math.max(0, Math.min(1, Number(s.ny)  || 0)),
-    nw:         Math.max(0, Math.min(1, Number(s.nw)  || 0.2)),
-    nh:         Math.max(0, Math.min(1, Number(s.nh)  || 0.05)),
-    confidence: Math.max(0, Math.min(1, Number(s.confidence) || 0.5)),
+    nx:         0.05,              // 5% from the left edge
+    ny:         0.10 + (i * 0.08), // Cascade downwards for each field
+    nw:         0.20,
+    nh:         0.05,
+    confidence: 1.0,
   }));
 }
 
