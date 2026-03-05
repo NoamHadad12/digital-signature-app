@@ -2,17 +2,14 @@
 // Vercel serverless function — AI-powered field detection for uploaded PDFs.
 //
 // Flow:
-//   1. Receive a base64-encoded PDF from the frontend (no prior Firebase Storage upload needed).
-//   2. Render page 1 to a JPEG using pdfjs-dist + canvas (both are native Node.js capable).
-//   3. Send the JPEG to Google Gemini Vision and parse the structured field suggestions.
-//   4. Return the raw suggestions array — Firestore is NOT touched here.
-//      Writing markers to Firestore only happens after the admin approves suggestions
-//      and clicks "Upload & Generate Link" (Human-in-the-Loop design).
-
-import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs';
-
-// pdfjs in Node.js does not use a web worker — disable the worker entirely.
-GlobalWorkerOptions.workerSrc = '';
+//   1. Receive a base64-encoded PDF from the frontend.
+//   2. Pass the PDF bytes directly to Gemini as `application/pdf` inline_data.
+//      Gemini 1.5 natively understands PDF structure — NO canvas, NO image
+//      conversion, NO native binaries required.  Works on Windows out of the box.
+//   3. Parse the structured field suggestions from Gemini's JSON response.
+//   4. Return the suggestions array — Firestore is NOT touched here.
+//      Writing confirmed markers to Firestore only occurs after the admin clicks
+//      "Upload & Generate Link" (Human-in-the-Loop design).
 
 // ---------------------------------------------------------------------------
 // Increase Vercel's default 4.5 MB JSON body limit so large PDFs can be sent.
@@ -26,40 +23,20 @@ export const config = {
 };
 
 // ---------------------------------------------------------------------------
-// renderFirstPageToBase64
-// Converts the first page of a PDF buffer to a base64-encoded JPEG string.
-// Resolution is kept at 2× (≈150 DPI) — enough for Vision models while
-// staying well within Gemini's 4 MB inline image limit.
+// callGemini
+// Sends the raw PDF (as base64) to Gemini 1.5 Flash using the native PDF
+// inline_data support.  Returns the parsed suggestions array.
+//
+// Why PDF directly instead of converting to an image first?
+//   • Gemini 1.5 accepts application/pdf as an inline_data mime_type, so it can
+//     read text layers, vector graphics, and metadata — far more accurate than
+//     a rasterised screenshot at moderate DPI.
+//   • This approach has ZERO native dependencies (no canvas, no pdfjs rendering),
+//     so it works on any OS including Windows with Node v24+.
+//
+// Temperature is set very low so the model outputs deterministic JSON.
 // ---------------------------------------------------------------------------
-async function renderFirstPageToBase64(pdfBuffer) {
-  // pdfjs-dist requires a Uint8Array, not a Node Buffer
-  const uint8 = new Uint8Array(pdfBuffer);
-
-  const loadingTask = getDocument({ data: uint8, disableFontFace: true });
-  const pdfDoc      = await loadingTask.promise;
-  const page        = await pdfDoc.getPage(1);  // Only the first page is needed for field detection
-
-  const SCALE    = 2;  // 2× base = ~150 DPI
-  const viewport = page.getViewport({ scale: SCALE });
-
-  // Dynamically import 'canvas' so the bundler can tree-shake it from browser builds
-  const { createCanvas } = await import('canvas');
-  const canvas  = createCanvas(viewport.width, viewport.height);
-  const context = canvas.getContext('2d');
-
-  // Render the PDF page directly into the node canvas context
-  await page.render({ canvasContext: context, viewport }).promise;
-
-  // Encode the rendered image as JPEG (quality 88% balances size vs. clarity)
-  return canvas.toBuffer('image/jpeg', { quality: 0.88 }).toString('base64');
-}
-
-// ---------------------------------------------------------------------------
-// callGeminiVision
-// Sends the base64 JPEG to Gemini 1.5 Flash and returns the parsed suggestions
-// array.  Temperature is set very low so the model outputs deterministic JSON.
-// ---------------------------------------------------------------------------
-async function callGeminiVision(base64Image) {
+async function callGemini(base64Pdf) {
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
   if (!GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY environment variable is not set on the server.');
@@ -70,12 +47,13 @@ async function callGeminiVision(base64Image) {
 
   // ---------------------------------------------------------------------------
   // Prompt engineering:
-  //   - Coordinates are normalised 0–1 (NOT 0–100) so they map directly onto
-  //     our nx / ny / nw / nh schema without any division on the client.
+  //   - Coordinates are normalised 0–1 (fraction of page width/height) so they
+  //     map directly onto our nx / ny / nw / nh schema without client-side math.
   //   - "confidence" (0–1) lets the frontend colour ghost markers by certainty.
   //   - Only three semantic types are allowed: signature, date, customText.
+  //   - "page" is 1-indexed and must match the actual PDF page number.
   // ---------------------------------------------------------------------------
-  const SYSTEM_PROMPT = `You are a document-analysis AI. Examine the provided image of a document page and locate every form field that requires user input.
+  const SYSTEM_PROMPT = `You are a document-analysis AI. Examine the provided PDF and locate every form field that requires user input across all pages.
 
 Identify fields of ONLY these types:
 1. "signature"   — a designated area for a handwritten signature.
@@ -84,13 +62,13 @@ Identify fields of ONLY these types:
    For "customText" items, read the printed label near the field and use it as the "label" value.
 
 CRITICAL output rules:
-- Return ONLY a valid JSON array — no markdown fences, no explanations.
+- Return ONLY a valid JSON array — no markdown fences, no explanations, no prose.
 - Coordinates MUST be normalised between 0 and 1 (fraction of page width/height).
   • "nx", "ny" = top-left corner of the bounding box.
   • "nw", "nh" = width and height of the bounding box.
-- Every object MUST have: type, nx, ny, nw, nh, confidence (0–1), page (always 1).
+- Every object MUST have: type, nx, ny, nw, nh, confidence (0–1), page (1-indexed).
 - "customText" objects MUST also include a "label" string.
-- If no fields are detected, return: []
+- If no fields are detected on any page, return: []
 
 Example valid output:
 [
@@ -106,8 +84,9 @@ Example valid output:
           { text: SYSTEM_PROMPT },
           {
             inline_data: {
-              mime_type: 'image/jpeg',
-              data: base64Image,
+              // Gemini 1.5 natively supports PDF — no image conversion step required
+              mime_type: 'application/pdf',
+              data:      base64Pdf,
             },
           },
         ],
@@ -123,7 +102,7 @@ Example valid output:
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(requestBody),
-    signal:  AbortSignal.timeout(45_000),  // 45 s hard timeout for slow Vision responses
+    signal:  AbortSignal.timeout(45_000),  // 45 s hard timeout for slow model responses
   });
 
   if (!response.ok) {
@@ -144,11 +123,18 @@ Example valid output:
   try {
     suggestions = JSON.parse(jsonString);
   } catch {
-    throw new Error(`Gemini returned non-JSON content: "${rawText}"`);
+    // Gemini occasionally returns a plain explanation instead of JSON (e.g. when
+    // it cannot locate any fields, or when the document is scanned at low quality).
+    // Falling back to an empty array is safer than crashing — the admin can still
+    // place fields manually.
+    console.warn('[analyze-pdf] Gemini returned non-JSON content; falling back to []. Raw output:', rawText);
+    return [];
   }
 
   if (!Array.isArray(suggestions)) {
-    throw new Error('Gemini response is not a JSON array.');
+    // The model returned valid JSON but not an array — treat it as empty
+    console.warn('[analyze-pdf] Gemini response is not a JSON array; falling back to []. Got:', suggestions);
+    return [];
   }
 
   // Clamp all coordinates to [0, 1] and guarantee required fields are present
@@ -179,17 +165,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Decode the incoming base64 PDF string into a Node.js Buffer
-    const pdfBuffer = Buffer.from(base64Pdf, 'base64');
-
-    // Render the first PDF page to a base64 JPEG for the Vision model
-    const base64Image  = await renderFirstPageToBase64(pdfBuffer);
-
-    // Ask Gemini to locate form fields and return structured coordinates
-    const suggestions  = await callGeminiVision(base64Image);
-
+    // Send the PDF directly to Gemini — no image conversion step required
+    const suggestions = await callGemini(base64Pdf);
     return res.status(200).json({ suggestions });
-
   } catch (error) {
     console.error('[analyze-pdf] Error:', error.message);
     return res.status(500).json({ error: error.message });

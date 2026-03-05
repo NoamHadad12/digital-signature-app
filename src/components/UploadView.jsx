@@ -1,13 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { storage } from '../firebase';
+import { storage, db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { ref, uploadBytes } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { doc, setDoc } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { getMarkerColor, getMarkerLabel, useWindowWidth } from '../utils/pdfHelpers';
-import { saveDocument } from '../services/dbService';
 
 // Set the worker source from a reliable CDN to ensure compatibility
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -23,8 +23,8 @@ const FIELD_TYPES = [
 
 
 const UploadView = () => {
-  // Expose the logout function from auth context
-  const { logout } = useAuth();
+  // Expose auth helpers and the current user object from the auth context
+  const { logout, currentUser } = useAuth();
 
   const [file, setFile] = useState(null);
   const [fileUrl, setFileUrl] = useState(null);
@@ -263,6 +263,45 @@ const UploadView = () => {
     setPendingLabel('');
   };
 
+  // ---------------------------------------------------------------------------
+  // saveDocumentToFirestore
+  // Writes the confirmed document record to the `documents` Firestore collection.
+  //
+  // Schema written:
+  //   fileName  {string}  Original filename as selected by the admin
+  //   fileUrl   {string}  Firebase Storage download URL (not the storage path)
+  //   ownerId   {string}  Firebase Auth UID of the admin who uploaded the file
+  //   createdAt {string}  ISO-8601 timestamp of when the record was created
+  //   fields    {Array}   Flat array of confirmed field markers (Human-in-the-Loop
+  //                       approved). Each entry mirrors the marker schema:
+  //                       { index, type, page, nx, ny, nw, nh, label? }
+  //
+  // Design rationale: fields are stored as a flat array instead of a sub-collection
+  // because all fields are always read together (never paginated individually),
+  // so a single document read is more efficient than N sub-collection reads.
+  // ---------------------------------------------------------------------------
+  const saveDocumentToFirestore = async (fileId, fileName, fileUrl, confirmedMarkers) => {
+    const documentRef = doc(db, 'documents', fileId);
+
+    await setDoc(documentRef, {
+      fileName,
+      fileUrl,
+      ownerId:   currentUser.uid,
+      createdAt: new Date().toISOString(),
+      // Map markers to a clean schema; `label` is only included for customText fields
+      fields: confirmedMarkers.map((marker, index) => ({
+        index,
+        type:  marker.type  || 'signature',
+        page:  marker.page  ?? 1,
+        nx:    marker.nx,
+        ny:    marker.ny,
+        nw:    marker.nw,
+        nh:    marker.nh,
+        ...(marker.label ? { label: marker.label } : {}),
+      })),
+    });
+  };
+
   const handleUpload = async () => {
     if (!file) {
       alert('Please select a PDF file first.');
@@ -289,10 +328,13 @@ const UploadView = () => {
       const storageRef = ref(storage, `pdfs/${fileId}.pdf`);
       await uploadBytes(storageRef, file);
 
-      // Step 2 — save the structured document record and markers to Firestore
-      await saveDocument(fileId, `pdfs/${fileId}.pdf`, markers);
+      // Step 2 — retrieve the permanent download URL from Firebase Storage
+      const fileUrl = await getDownloadURL(storageRef);
 
-      // 3. Generate and display the Link
+      // Step 3 — save the full document record (including confirmed fields) to Firestore
+      await saveDocumentToFirestore(fileId, file.name, fileUrl, markers);
+
+      // Step 4 — generate and display the shareable signing link
       const link = `${window.location.origin}/sign/${fileId}`;
       setGeneratedLink(link);
     } catch (error) {
