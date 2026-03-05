@@ -42,7 +42,7 @@ async function callGemini(base64Pdf) {
     throw new Error('GEMINI_API_KEY environment variable is not set on the server.');
   }
 
-  const MODEL   = 'gemini-1.5-flash-latest';
+  const MODEL   = 'gemini-1.5-flash';
   const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
   // ---------------------------------------------------------------------------
