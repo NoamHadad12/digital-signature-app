@@ -45,7 +45,7 @@ const UploadView = () => {
   // ---------------------------------------------------------------------------
   const [suggestions, setSuggestions] = useState([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiError, setAiError] = useState('');
+  const [aiError, setAiError] = useState(null);
   // ID of the suggestion whose label is currently being edited inline
   const [editingSuggestionId, setEditingSuggestionId] = useState(null);
   const [editingLabel, setEditingLabel] = useState('');
@@ -80,7 +80,7 @@ const UploadView = () => {
     setIsCopied(false);   // Reset copied state on new upload
     setMarkers([]);
     setSuggestions([]);   // Discard any AI suggestions from a previous file
-    setAiError('');
+    setAiError(null);
 
     if (selectedFile) {
       setFileUrl(URL.createObjectURL(selectedFile));
@@ -163,7 +163,7 @@ const UploadView = () => {
   const handleAnalyze = async () => {
     if (!file) return;
     setIsAnalyzing(true);
-    setAiError('');
+    setAiError(null);
     setSuggestions([]);
 
     try {
@@ -208,9 +208,15 @@ const UploadView = () => {
       // Also catch quota errors that surfaced through the error message text
       const msg = error.message || '';
       if (msg.includes('429') || /quota/i.test(msg)) {
-        setAiError('AI Quota Reached: The free tier limit has been exceeded. Please wait about 60 seconds and try again or use a smaller document.');
+        setAiError({
+          title: 'Daily Limit Reached',
+          description: 'The AI has reached its free-tier limit. Please wait about 60 seconds and try again, or add the fields manually.',
+        });
       } else {
-        setAiError(msg);
+        setAiError({
+          title: 'Oops! The AI needs a moment',
+          description: 'We hit a small snag while trying to read your document, but you can give it another try or simply add the fields yourself.',
+        });
       }
     } finally {
       setIsAnalyzing(false);
@@ -498,11 +504,14 @@ const UploadView = () => {
               fontSize: '0.85rem',
               marginTop: 8,
             }}>
-              <span style={{ flex: 1 }}>⚠️ {aiError}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, marginBottom: 2 }}>⚠️ {aiError.title}</div>
+                <div style={{ color: '#991b1b', fontWeight: 400 }}>{aiError.description}</div>
+              </div>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginTop: 1 }}>
                 {/* Retry: dismiss the error and immediately re-run the analysis */}
                 <button
-                  onClick={() => { setAiError(''); handleAnalyze(); }}
+                  onClick={() => { setAiError(null); handleAnalyze(); }}
                   style={{
                     background: '#dc2626',
                     color: '#fff',
@@ -518,7 +527,7 @@ const UploadView = () => {
                 </button>
                 {/* Close: dismiss the error without retrying */}
                 <button
-                  onClick={() => setAiError('')}
+                  onClick={() => setAiError(null)}
                   style={{
                     background: 'transparent',
                     color: '#b91c1c',

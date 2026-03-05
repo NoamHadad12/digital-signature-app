@@ -73,15 +73,18 @@ async function callGemini(base64Pdf) {
 
   // Explicitly pin the SDK to the v1 stable endpoint.
   // Without this, the SDK defaults to v1beta, which returns 404 for GA models.
-  const genAI = new GoogleGenerativeAI(apiKey, { apiVersion: 'v1' });
-  console.log('[DEBUG] API Version set to v1');
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-      temperature:     0.05,  // Near-zero temperature for deterministic structured output
-      maxOutputTokens: 2048,
+  const genAI = new GoogleGenerativeAI(apiKey.trim());
+  console.log("[STRICT DEBUG] Forcing API Version v1 via getGenerativeModel");
+  const model = genAI.getGenerativeModel(
+    {
+      model: "gemini-1.5-flash-8b",
+      generationConfig: {
+        temperature:     0.05,  // Near-zero temperature for deterministic structured output
+        maxOutputTokens: 2048,
+      },
     },
-  });
+    { apiVersion: "v1" }
+  );
 
   // ---------------------------------------------------------------------------
   // Prompt engineering:
