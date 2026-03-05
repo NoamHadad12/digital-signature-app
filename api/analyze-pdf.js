@@ -57,6 +57,7 @@ async function callGemini(base64Pdf) {
       generationConfig: {
         temperature:     0.0,
         maxOutputTokens: 2048,
+        responseMimeType: "application/json",
       },
     },
     { apiVersion: "v1beta" }
@@ -65,7 +66,7 @@ async function callGemini(base64Pdf) {
  // ---------------------------------------------------------------------------
   // Prompt engineering - Optimized for visually reversed Hebrew text
   // ---------------------------------------------------------------------------
-  const SYSTEM_PROMPT = `Extract form fields from this PDF. WARNING: The Hebrew text in this document is visually encoded (reversed). For example, to find 'תאריך' (Date), you must look for the reversed string 'דיראת'. To find 'חתימה' (Signature), look for 'המיתח' or 'תמיתח'. Find these date and signature fields despite the reversal. You MUST return ONLY a valid JSON array of objects with normalized coordinates (0 to 1). Format: [{"type": "signature"|"date"|"customText", "label": "string", "nx": float, "ny": float, "nw": float, "nh": float, "page": 1}]. No prose, no markdown.`;
+  const SYSTEM_PROMPT = `Extract form fields. The Hebrew text is reversed (e.g., 'תאריך' is 'דיראת', 'חתימה' is 'המיתח'). Return ONLY a raw JSON array using this exact schema: [{"type": "signature"|"date"|"customText", "label": "string", "nx": 0.5, "ny": 0.5, "nw": 0.2, "nh": 0.05, "page": 1}].`;
 
   console.log("[FINAL TEST] Calling Gemini v1beta with model: gemini-2.5-flash");
 
