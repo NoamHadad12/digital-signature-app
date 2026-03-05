@@ -54,8 +54,10 @@ const UploadView = () => {
   const windowWidth = useWindowWidth();
 
   const [isDrawing, setIsDrawing] = useState(false);
-  // Tracks which suggestion (by ID) is currently being dragged to reposition it
-  const [draggingId, setDraggingId] = useState(null);
+  // Tracks the active pointer interaction on AI suggestion ghost boxes (move or resize)
+  const [activeAction, setActiveAction] = useState({ id: null, type: 'move' });
+  // Tracks the active pointer interaction on confirmed marker boxes (move or resize)
+  const [activeMarkerAction, setActiveMarkerAction] = useState({ index: null, type: 'move' });
   const [drawStart, setDrawStart] = useState(null);
   const [drawingBox, setDrawingBox] = useState(null);
   const currentPageRef = useRef(null);
@@ -645,22 +647,54 @@ const UploadView = () => {
                   <div
                     key={`page_${pageNumber}`}
                     className="pdf-page-wrapper"
-                    style={{ cursor: draggingId ? 'grabbing' : 'crosshair', userSelect: 'none' }}
+                    style={{
+                      cursor: (activeAction.id || activeMarkerAction.index !== null) ? 'grabbing' : 'crosshair',
+                      userSelect: 'none',
+                    }}
                     onMouseDown={(e) => handleMouseDown(e, pageNumber)}
                     onMouseMove={(e) => handleMouseMove(e, pageNumber)}
                     onMouseUp={(e) => handleMouseUp(e, pageNumber)}
                     onPointerMove={(e) => {
-                      // Reposition the dragged suggestion using fractional coordinates
-                      if (!draggingId) return;
                       const rect = e.currentTarget.getBoundingClientRect();
-                      const newNx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                      const newNy = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
-                      setSuggestions((prev) =>
-                        prev.map((s) => s.id === draggingId ? { ...s, nx: newNx, ny: newNy } : s)
-                      );
+                      const curNx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                      const curNy = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+                      // Handle suggestion ghost box — move or resize
+                      if (activeAction.id) {
+                        setSuggestions((prev) =>
+                          prev.map((s) => {
+                            if (s.id !== activeAction.id) return s;
+                            if (activeAction.type === 'move') return { ...s, nx: curNx, ny: curNy };
+                            // Resize: distance from field's fixed top-left to cursor = new dimensions
+                            const newNw = Math.max(0.05, Math.min(1 - s.nx, curNx - s.nx));
+                            const newNh = Math.max(0.02, Math.min(1 - s.ny, curNy - s.ny));
+                            return { ...s, nw: newNw, nh: newNh };
+                          })
+                        );
+                      }
+
+                      // Handle confirmed marker — move or resize
+                      if (activeMarkerAction.index !== null) {
+                        setMarkers((prev) =>
+                          prev.map((m, i) => {
+                            if (i !== activeMarkerAction.index) return m;
+                            if (activeMarkerAction.type === 'move') return { ...m, nx: curNx, ny: curNy };
+                            // Resize: distance from marker's fixed top-left to cursor = new dimensions
+                            const newNw = Math.max(0.05, Math.min(1 - m.nx, curNx - m.nx));
+                            const newNh = Math.max(0.02, Math.min(1 - m.ny, curNy - m.ny));
+                            return { ...m, nw: newNw, nh: newNh };
+                          })
+                        );
+                      }
                     }}
-                    onPointerUp={() => setDraggingId(null)}
-                    onPointerLeave={() => setDraggingId(null)}
+                    onPointerUp={() => {
+                      setActiveAction({ id: null, type: 'move' });
+                      setActiveMarkerAction({ index: null, type: 'move' });
+                    }}
+                    onPointerLeave={() => {
+                      setActiveAction({ id: null, type: 'move' });
+                      setActiveMarkerAction({ index: null, type: 'move' });
+                    }}
                   >
                     <Page
                       pageNumber={pageNumber}
@@ -686,10 +720,17 @@ const UploadView = () => {
                     {/* Render all confirmed markers for this page with type-specific color and label */}
                     {pageMarkers.map((marker) => {
                       const color = getMarkerColor(marker);
+                      const isActiveMarker = activeMarkerAction.index === marker.globalIndex;
                       return (
                         <div
                           key={marker.globalIndex}
                           className="signature-marker"
+                          onPointerDown={(e) => {
+                            // Body pointer-down initiates a move interaction
+                            e.stopPropagation();
+                            e.preventDefault();
+                            setActiveMarkerAction({ index: marker.globalIndex, type: 'move' });
+                          }}
                           style={{
                             left: `${marker.nx * 100}%`,
                             top: `${marker.ny * 100}%`,
@@ -698,13 +739,15 @@ const UploadView = () => {
                             borderColor: color,
                             backgroundColor: `${color}28`,
                             color,
+                            cursor: isActiveMarker && activeMarkerAction.type === 'move' ? 'grabbing' : 'grab',
                           }}
                         >
                           <span>{getMarkerLabel(marker)}</span>
-                          {/* Remove button stops propagation so it does not start a new drag */}
+                          {/* Remove button stops propagation so it does not start a drag or resize */}
                           <button
                             className="marker-remove-btn"
                             onMouseDown={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
                               e.stopPropagation();
                               handleRemoveMarker(marker.globalIndex);
@@ -713,6 +756,25 @@ const UploadView = () => {
                           >
                             &times;
                           </button>
+                          {/* Resize handle — drag this corner to change the field's width and height */}
+                          <div
+                            title="Resize this field"
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              setActiveMarkerAction({ index: marker.globalIndex, type: 'resize' });
+                            }}
+                            style={{
+                              position:        'absolute',
+                              bottom:          0,
+                              right:           0,
+                              width:           10,
+                              height:          10,
+                              backgroundColor: color,
+                              cursor:          'nwse-resize',
+                              borderRadius:    '2px 0 0 0',
+                            }}
+                          />
                         </div>
                       );
                     })}
@@ -730,11 +792,12 @@ const UploadView = () => {
                         return (
                           <div
                             key={suggestion.id}
-                            onMouseDown={(e) => e.stopPropagation()} // Prevent drawing a new box when clicking ghost controls
+                            onMouseDown={(e) => e.stopPropagation()} // Prevent triggering a new draw box
                             onPointerDown={(e) => {
+                              // Body pointer-down initiates a move interaction
                               e.stopPropagation();
                               e.preventDefault(); // Prevent text selection during drag
-                              setDraggingId(suggestion.id);
+                              setActiveAction({ id: suggestion.id, type: 'move' });
                             }}
                             style={{
                               position:        'absolute',
@@ -748,7 +811,7 @@ const UploadView = () => {
                               boxSizing:       'border-box',
                               pointerEvents:   'all',
                               zIndex:          10,
-                              cursor:          draggingId === suggestion.id ? 'grabbing' : 'grab',
+                              cursor:          activeAction.id === suggestion.id && activeAction.type === 'move' ? 'grabbing' : 'grab',
                             }}
                           >
                             {/* Label row inside the ghost box */}
@@ -821,6 +884,27 @@ const UploadView = () => {
                                 </button>
                               </div>
                             )}
+
+                            {/* Resize handle — drag the bottom-right corner to change width and height */}
+                            <div
+                              title="Resize this field"
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onPointerDown={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setActiveAction({ id: suggestion.id, type: 'resize' });
+                              }}
+                              style={{
+                                position:        'absolute',
+                                bottom:          0,
+                                right:           0,
+                                width:           10,
+                                height:          10,
+                                backgroundColor: ghostBorder,
+                                cursor:          'nwse-resize',
+                                borderRadius:    '2px 0 0 0',
+                              }}
+                            />
 
                             {/* Floating action bar — approve / edit / reject */}
                             <div style={{
