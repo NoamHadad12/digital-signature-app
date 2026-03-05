@@ -1,15 +1,19 @@
 // api/analyze-pdf.js
 // Vercel serverless function — AI-powered field detection for uploaded PDFs.
 //
+// Uses the official @google/generative-ai SDK instead of raw fetch to avoid
+// 404 / model-not-found errors caused by manual URL construction.
+//
 // Flow:
 //   1. Receive a base64-encoded PDF from the frontend.
-//   2. Pass the PDF bytes directly to Gemini as `application/pdf` inline_data.
+//   2. Pass the PDF bytes directly to Gemini as inlineData (application/pdf).
 //      Gemini 1.5 natively understands PDF structure — NO canvas, NO image
 //      conversion, NO native binaries required.  Works on Windows out of the box.
 //   3. Parse the structured field suggestions from Gemini's JSON response.
 //   4. Return the suggestions array — Firestore is NOT touched here.
 //      Writing confirmed markers to Firestore only occurs after the admin clicks
 //      "Upload & Generate Link" (Human-in-the-Loop design).
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // ---------------------------------------------------------------------------
 // Increase Vercel's default 4.5 MB JSON body limit so large PDFs can be sent.
@@ -24,11 +28,12 @@ export const config = {
 
 // ---------------------------------------------------------------------------
 // callGemini
-// Sends the raw PDF (as base64) to Gemini 1.5 Flash using the native PDF
-// inline_data support.  Returns the parsed suggestions array.
+// Sends the raw PDF (as base64) to Gemini 1.5 Flash via the official SDK.
+// Using the SDK instead of raw fetch avoids 404 errors caused by incorrect
+// manual URL or version construction.
 //
 // Why PDF directly instead of converting to an image first?
-//   • Gemini 1.5 accepts application/pdf as an inline_data mime_type, so it can
+//   • Gemini 1.5 accepts application/pdf as inlineData mimeType, so it can
 //     read text layers, vector graphics, and metadata — far more accurate than
 //     a rasterised screenshot at moderate DPI.
 //   • This approach has ZERO native dependencies (no canvas, no pdfjs rendering),
@@ -42,8 +47,20 @@ async function callGemini(base64Pdf) {
     throw new Error('GEMINI_API_KEY environment variable is not set on the server.');
   }
 
-  const MODEL   = 'gemini-1.5-flash'; 
-  const API_URL = `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+  // Use the official SDK — it handles endpoint, version, and auth automatically.
+  // .trim() guards against accidental whitespace copied into the Vercel env var.
+  const MODEL = 'gemini-1.5-flash';
+  console.log('Using Model:', MODEL);
+
+  const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.trim());
+  const model = genAI.getGenerativeModel({
+    model: MODEL,
+    generationConfig: {
+      temperature:     0.05,  // Near-zero temperature for deterministic structured output
+      maxOutputTokens: 2048,
+    },
+  });
+
   // ---------------------------------------------------------------------------
   // Prompt engineering:
   //   - Coordinates are normalised 0–1 (fraction of page width/height) so they
@@ -76,44 +93,20 @@ Example valid output:
   { "type": "customText", "label": "Full Name",  "page": 1, "nx": 0.05, "ny": 0.55, "nw": 0.40, "nh": 0.05, "confidence": 0.88 }
 ]`;
 
-  const requestBody = {
-    contents: [
-      {
-        parts: [
-          { text: SYSTEM_PROMPT },
-          {
-            inline_data: {
-              // Gemini 1.5 natively supports PDF — no image conversion step required
-              mime_type: 'application/pdf',
-              data:      base64Pdf,
-            },
-          },
-        ],
+  // Send the prompt text + PDF inline data to Gemini via the SDK.
+  // The SDK automatically selects the correct REST endpoint and API version.
+  const result = await model.generateContent([
+    { text: SYSTEM_PROMPT },
+    {
+      inlineData: {
+        // Gemini 1.5 natively supports PDF — no image conversion step required
+        mimeType: 'application/pdf',
+        data:     base64Pdf,
       },
-    ],
-    generationConfig: {
-      temperature:     0.05,  // Near-zero temperature for deterministic structured output
-      maxOutputTokens: 2048,
     },
-  };
+  ]);
 
-  // Log the model being used so it is visible in Vercel Function Logs.
-  console.log('Using Model:', MODEL);
-
-  const response = await fetch(API_URL, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(requestBody),
-    signal:  AbortSignal.timeout(45_000),  // 45 s hard timeout for slow model responses
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Gemini API responded with status ${response.status}: ${errText}`);
-  }
-
-  const data    = await response.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const rawText = result.response.text() ?? '';
 
   // Strip accidental markdown code fences before parsing
   const jsonString = rawText
