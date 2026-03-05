@@ -38,6 +38,18 @@ const UploadView = () => {
   const [generatedLink, setGeneratedLink] = useState('');
   const [isCopied, setIsCopied] = useState(false);
 
+  // ---------------------------------------------------------------------------
+  // AI Suggestion state (Human-in-the-Loop)
+  // suggestions: proposed markers returned by Gemini — not yet in markers[].
+  // Each suggestion has a unique `id` so approve/reject can target it by key.
+  // ---------------------------------------------------------------------------
+  const [suggestions, setSuggestions] = useState([]);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiError, setAiError] = useState('');
+  // ID of the suggestion whose label is currently being edited inline
+  const [editingSuggestionId, setEditingSuggestionId] = useState(null);
+  const [editingLabel, setEditingLabel] = useState('');
+
   // Drag-to-draw state
   const windowWidth = useWindowWidth();
 
@@ -67,6 +79,8 @@ const UploadView = () => {
     setGeneratedLink(''); // Reset link on new upload
     setIsCopied(false);   // Reset copied state on new upload
     setMarkers([]);
+    setSuggestions([]);   // Discard any AI suggestions from a previous file
+    setAiError('');
 
     if (selectedFile) {
       setFileUrl(URL.createObjectURL(selectedFile));
@@ -140,6 +154,107 @@ const UploadView = () => {
     setMarkers((prev) => prev.filter((_, i) => i !== indexToRemove));
   };
 
+  // ---------------------------------------------------------------------------
+  // handleAnalyze
+  // Encodes the selected PDF as base64 and sends it to /api/analyze-pdf.
+  // The response populates the `suggestions` array — nothing is saved to
+  // Firestore yet.  The admin must approve each suggestion individually.
+  // ---------------------------------------------------------------------------
+  const handleAnalyze = async () => {
+    if (!file) return;
+    setIsAnalyzing(true);
+    setAiError('');
+    setSuggestions([]);
+
+    try {
+      // Read the file as an ArrayBuffer and convert to base64 for the API
+      const buffer    = await file.arrayBuffer();
+      const base64Pdf = btoa(
+        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      );
+
+      const response = await fetch('/api/analyze-pdf', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ base64Pdf }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'AI analysis failed.');
+      }
+
+      const { suggestions: raw } = await response.json();
+
+      // Attach a unique ID to each suggestion so we can target it on approve/reject
+      setSuggestions(raw.map((s) => ({ ...s, id: crypto.randomUUID() })));
+    } catch (error) {
+      console.error('[AI] Analysis error:', error);
+      setAiError(error.message);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // approveSuggestion
+  // Promotes a ghost suggestion into the confirmed markers array and removes
+  // it from suggestions.  If label editing was open for this suggestion, the
+  // current editingLabel value is used instead of the original label.
+  // ---------------------------------------------------------------------------
+  const approveSuggestion = (id) => {
+    setSuggestions((prev) => {
+      const suggestion = prev.find((s) => s.id === id);
+      if (!suggestion) return prev;
+
+      const confirmedLabel =
+        editingSuggestionId === id ? editingLabel.trim() || suggestion.label : suggestion.label;
+
+      const newMarker = {
+        type:  suggestion.type,
+        page:  suggestion.page,
+        nx:    suggestion.nx,
+        ny:    suggestion.ny,
+        nw:    suggestion.nw,
+        nh:    suggestion.nh,
+        // Only attach label for non-signature, non-date types
+        ...(suggestion.type === 'customText' ? { label: confirmedLabel } : {}),
+      };
+
+      setMarkers((m) => [...m, newMarker]);
+      // Clear edit state if this suggestion was being edited
+      if (editingSuggestionId === id) setEditingSuggestionId(null);
+      return prev.filter((s) => s.id !== id);
+    });
+  };
+
+  // ---------------------------------------------------------------------------
+  // rejectSuggestion
+  // Removes a ghost suggestion without adding it to markers.
+  // ---------------------------------------------------------------------------
+  const rejectSuggestion = (id) => {
+    setSuggestions((prev) => prev.filter((s) => s.id !== id));
+    if (editingSuggestionId === id) setEditingSuggestionId(null);
+  };
+
+  // Approve all suggestions at once — convenience button
+  const approveAll = () => {
+    setSuggestions((prev) => {
+      const newMarkers = prev.map((s) => ({
+        type:  s.type,
+        page:  s.page,
+        nx:    s.nx,
+        ny:    s.ny,
+        nw:    s.nw,
+        nh:    s.nh,
+        ...(s.type === 'customText' ? { label: s.label } : {}),
+      }));
+      setMarkers((m) => [...m, ...newMarkers]);
+      return [];
+    });
+    setEditingSuggestionId(null);
+  };
+
   // Confirm the pending customText box by attaching the admin's label and adding it to markers
   const confirmPendingBox = () => {
     if (!pendingBox || !pendingLabel.trim()) return;
@@ -151,6 +266,10 @@ const UploadView = () => {
   const handleUpload = async () => {
     if (!file) {
       alert('Please select a PDF file first.');
+      return;
+    }
+    if (markers.length === 0 && suggestions.length > 0) {
+      alert(`You have ${suggestions.length} pending AI suggestions. Please approve or reject them before uploading.`);
       return;
     }
     if (markers.length === 0) {
@@ -252,8 +371,8 @@ const UploadView = () => {
             You can place multiple fields of different types. Click &times; on any field to remove it.
           </p>
 
-          {/* Field type selector — choose a type, then drag a box on the document */}
-          <div className="field-type-selector">
+          {/* Field type selector + AI detect button */}
+          <div className="field-type-selector" style={{ alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
             {FIELD_TYPES.map((ft) => (
               <button
                 key={ft.key}
@@ -268,9 +387,106 @@ const UploadView = () => {
                 {ft.label}
               </button>
             ))}
+
+            {/* Vertical divider */}
+            <span style={{ borderLeft: '1px solid #d1d5db', height: 28, margin: '0 4px' }} />
+
+            {/* AI detection trigger button */}
+            <button
+              onClick={handleAnalyze}
+              disabled={isAnalyzing}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '6px',
+                border: '1.5px solid #7c3aed',
+                backgroundColor: isAnalyzing ? '#ede9fe' : '#7c3aed',
+                color: isAnalyzing ? '#7c3aed' : 'white',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                cursor: isAnalyzing ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.15s',
+              }}
+            >
+              {isAnalyzing ? (
+                <>
+                  <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⏳</span>
+                  Analyzing…
+                </>
+              ) : (
+                <>🤖 Detect Fields with AI</>
+              )}
+            </button>
           </div>
+
+          {/* AI error message */}
+          {aiError && (
+            <p style={{
+              color: '#b91c1c',
+              background: '#fef2f2',
+              border: '1px solid #fca5a5',
+              borderRadius: 6,
+              padding: '7px 12px',
+              fontSize: '0.85rem',
+              marginTop: 8,
+            }}>
+              ⚠️ AI Error: {aiError}
+            </p>
+          )}
+
+          {/* Pending AI suggestions banner */}
+          {suggestions.length > 0 && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              background: '#f5f3ff',
+              border: '1px solid #c4b5fd',
+              borderRadius: 8,
+              padding: '8px 14px',
+              marginTop: 10,
+              fontSize: '0.88rem',
+              color: '#4c1d95',
+            }}>
+              <span>🤖 <strong>{suggestions.length}</strong> AI suggestion{suggestions.length !== 1 ? 's' : ''} pending review — approve or reject each field below.</span>
+              <button
+                onClick={approveAll}
+                style={{
+                  marginLeft: 'auto',
+                  padding: '4px 10px',
+                  borderRadius: 5,
+                  border: '1.5px solid #7c3aed',
+                  background: '#7c3aed',
+                  color: 'white',
+                  fontWeight: 600,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                }}
+              >
+                ✓ Approve All
+              </button>
+              <button
+                onClick={() => setSuggestions([])}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 5,
+                  border: '1.5px solid #dc2626',
+                  background: 'transparent',
+                  color: '#dc2626',
+                  fontWeight: 600,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                }}
+              >
+                ✕ Reject All
+              </button>
+            </div>
+          )}
+
           {activeFieldType === 'customText' && (
-            <p style={{ fontSize: '0.82rem', color: '#2563eb', marginBottom: 8, marginTop: -4 }}>
+            <p style={{ fontSize: '0.82rem', color: '#2563eb', marginBottom: 8, marginTop: 4 }}>
               Drag a box on the PDF, then name the field.
             </p>
           )}
@@ -377,6 +593,166 @@ const UploadView = () => {
                         </div>
                       );
                     })}
+
+                    {/* Ghost markers — AI suggestions pending admin review */}
+                    {suggestions
+                      .filter((s) => s.page === pageNumber)
+                      .map((suggestion) => {
+                        // Confidence shades the ghost: ≥80% = green-tinted, else amber
+                        const isHighConf  = suggestion.confidence >= 0.8;
+                        const ghostBorder = isHighConf ? '#7c3aed' : '#d97706';
+                        const ghostBg     = isHighConf ? 'rgba(124,58,237,0.10)' : 'rgba(217,119,6,0.10)';
+                        const isEditing   = editingSuggestionId === suggestion.id;
+
+                        return (
+                          <div
+                            key={suggestion.id}
+                            onMouseDown={(e) => e.stopPropagation()} // Prevent drawing a new box when clicking ghost controls
+                            style={{
+                              position:        'absolute',
+                              left:            `${suggestion.nx * 100}%`,
+                              top:             `${suggestion.ny * 100}%`,
+                              width:           `${suggestion.nw * 100}%`,
+                              height:          `${suggestion.nh * 100}%`,
+                              border:          `2px dashed ${ghostBorder}`,
+                              backgroundColor: ghostBg,
+                              borderRadius:    4,
+                              boxSizing:       'border-box',
+                              pointerEvents:   'all',
+                              zIndex:          10,
+                            }}
+                          >
+                            {/* Label row inside the ghost box */}
+                            <span style={{
+                              position:   'absolute',
+                              bottom:     '100%',
+                              left:       0,
+                              fontSize:   '0.65rem',
+                              fontWeight: 700,
+                              color:      ghostBorder,
+                              whiteSpace: 'nowrap',
+                              lineHeight: 1.2,
+                              padding:    '1px 3px',
+                              background: 'white',
+                              borderRadius: 2,
+                              transform:  'translateY(-1px)',
+                            }}>
+                              🤖 {suggestion.label}
+                              {' '}({Math.round(suggestion.confidence * 100)}%)
+                            </span>
+
+                            {/* Inline label editor — shown when the pencil icon is clicked */}
+                            {isEditing && (
+                              <div
+                                style={{
+                                  position:   'absolute',
+                                  top:        '100%',
+                                  left:       0,
+                                  zIndex:     20,
+                                  background: 'white',
+                                  border:     '1px solid #c4b5fd',
+                                  borderRadius: 6,
+                                  padding:    '6px 8px',
+                                  boxShadow:  '0 4px 12px rgba(0,0,0,0.15)',
+                                  minWidth:   140,
+                                  display:    'flex',
+                                  gap:        4,
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  autoFocus
+                                  value={editingLabel}
+                                  onChange={(e) => setEditingLabel(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') approveSuggestion(suggestion.id);
+                                    if (e.key === 'Escape') setEditingSuggestionId(null);
+                                  }}
+                                  style={{
+                                    flex:       1,
+                                    border:     '1px solid #d1d5db',
+                                    borderRadius: 4,
+                                    padding:    '3px 6px',
+                                    fontSize:   '0.8rem',
+                                    outline:    'none',
+                                    minWidth:   0,
+                                  }}
+                                  placeholder="Field label…"
+                                />
+                                <button
+                                  onClick={() => approveSuggestion(suggestion.id)}
+                                  style={{
+                                    background: '#7c3aed', color: 'white',
+                                    border: 'none', borderRadius: 4,
+                                    padding: '3px 7px', cursor: 'pointer', fontWeight: 700,
+                                  }}
+                                  title="Approve with this label"
+                                >
+                                  ✓
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Floating action bar — approve / edit / reject */}
+                            <div style={{
+                              position:       'absolute',
+                              top:            2,
+                              right:          2,
+                              display:        'flex',
+                              gap:            3,
+                              pointerEvents:  'all',
+                            }}>
+                              {/* Approve button */}
+                              <button
+                                title="Approve this field"
+                                onClick={(e) => { e.stopPropagation(); approveSuggestion(suggestion.id); }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                style={{
+                                  width: 22, height: 22, borderRadius: 4,
+                                  border: 'none', background: '#059669',
+                                  color: 'white', fontSize: '0.75rem',
+                                  cursor: 'pointer', fontWeight: 700,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}
+                              >✓</button>
+
+                              {/* Edit label button — only shown for customText */}
+                              {suggestion.type === 'customText' && (
+                                <button
+                                  title="Edit label before approving"
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingSuggestionId(isEditing ? null : suggestion.id);
+                                    setEditingLabel(suggestion.label);
+                                  }}
+                                  style={{
+                                    width: 22, height: 22, borderRadius: 4,
+                                    border: 'none', background: '#2563eb',
+                                    color: 'white', fontSize: '0.7rem',
+                                    cursor: 'pointer', fontWeight: 700,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  }}
+                                >✎</button>
+                              )}
+
+                              {/* Reject button */}
+                              <button
+                                title="Reject this suggestion"
+                                onClick={(e) => { e.stopPropagation(); rejectSuggestion(suggestion.id); }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                style={{
+                                  width: 22, height: 22, borderRadius: 4,
+                                  border: 'none', background: '#dc2626',
+                                  color: 'white', fontSize: '0.8rem',
+                                  cursor: 'pointer', fontWeight: 700,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}
+                              >✕</button>
+                            </div>
+                          </div>
+                        );
+                      })}
                   </div>
                 );
               })}
@@ -391,8 +767,21 @@ const UploadView = () => {
         <div className="action-footer">
           <div className="action-footer-inner">
             <p className="action-footer-status">
-              Total Fields Placed:{' '}
+              Confirmed Fields:{' '}
               <span className="action-footer-count">{markers.length}</span>
+              {suggestions.length > 0 && (
+                <span style={{
+                  marginLeft: 10,
+                  padding: '1px 8px',
+                  borderRadius: 10,
+                  background: '#ede9fe',
+                  color: '#6d28d9',
+                  fontWeight: 600,
+                  fontSize: '0.8rem',
+                }}>
+                  {suggestions.length} AI pending
+                </span>
+              )}
             </p>
             <button
               onClick={handleUpload}
