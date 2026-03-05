@@ -180,6 +180,11 @@ const UploadView = () => {
       });
 
       if (!response.ok) {
+        // Detect quota-exceeded (429) before reading the body so we can show
+        // a friendly message regardless of what the backend error text says.
+        if (response.status === 429) {
+          throw new Error('AI Quota Reached: The free tier limit has been exceeded. Please wait about 60 seconds and try again or use a smaller document.');
+        }
         const err = await response.json();
         throw new Error(err.error || 'AI analysis failed.');
       }
@@ -190,7 +195,13 @@ const UploadView = () => {
       setSuggestions(raw.map((s) => ({ ...s, id: crypto.randomUUID() })));
     } catch (error) {
       console.error('[AI] Analysis error:', error);
-      setAiError(error.message);
+      // Also catch quota errors that surfaced through the error message text
+      const msg = error.message || '';
+      if (msg.includes('429') || /quota/i.test(msg)) {
+        setAiError('AI Quota Reached: The free tier limit has been exceeded. Please wait about 60 seconds and try again or use a smaller document.');
+      } else {
+        setAiError(msg);
+      }
     } finally {
       setIsAnalyzing(false);
     }
@@ -463,19 +474,55 @@ const UploadView = () => {
             </button>
           </div>
 
-          {/* AI error message */}
+          {/* AI error message — shown as a dismissible red banner with Retry/Close actions */}
           {aiError && (
-            <p style={{
+            <div style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
               color: '#b91c1c',
               background: '#fef2f2',
               border: '1px solid #fca5a5',
               borderRadius: 6,
-              padding: '7px 12px',
+              padding: '10px 14px',
               fontSize: '0.85rem',
               marginTop: 8,
             }}>
-              ⚠️ AI Error: {aiError}
-            </p>
+              <span style={{ flex: 1 }}>⚠️ {aiError}</span>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginTop: 1 }}>
+                {/* Retry: dismiss the error and immediately re-run the analysis */}
+                <button
+                  onClick={() => { setAiError(''); handleAnalyze(); }}
+                  style={{
+                    background: '#dc2626',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 4,
+                    padding: '3px 10px',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                  }}
+                >
+                  Retry
+                </button>
+                {/* Close: dismiss the error without retrying */}
+                <button
+                  onClick={() => setAiError('')}
+                  style={{
+                    background: 'transparent',
+                    color: '#b91c1c',
+                    border: '1px solid #fca5a5',
+                    borderRadius: 4,
+                    padding: '3px 8px',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
           )}
 
           {/* Pending AI suggestions banner */}

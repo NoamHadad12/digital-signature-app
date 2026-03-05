@@ -172,6 +172,12 @@ export default async function handler(req, res) {
     return res.status(200).json({ suggestions });
   } catch (error) {
     console.error('[analyze-pdf] Error:', error.message);
-    return res.status(500).json({ error: error.message });
+    // Detect quota / rate-limit errors from the Gemini SDK and forward 429
+    // so the frontend can display a user-friendly message instead of a generic 500.
+    const isQuotaError =
+      error.message?.includes('429') ||
+      /quota/i.test(error.message || '');
+    const statusCode = isQuotaError ? 429 : 500;
+    return res.status(statusCode).json({ error: error.message });
   }
 }
