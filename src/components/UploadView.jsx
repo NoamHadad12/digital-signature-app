@@ -30,23 +30,20 @@ const UploadView = () => {
   const [fileUrl, setFileUrl] = useState(null);
   const [fileError, setFileError] = useState(''); // Validation error shown below the file input
   const [numPages, setNumPages] = useState(null);
-  // markers is an array of { type, subtype, page, nx, ny, nw, nh } — one entry per drawn box
-  const [markers, setMarkers] = useState([]);
+  // Single source of truth for ALL fields on the document.
+  // Each entry: { id, type, label?, page, nx, ny, nw, nh, confirmed: boolean }
+  // confirmed=true  → solid border, saved on Upload
+  // confirmed=false → dashed border, AI suggestion awaiting approval
+  const [fields, setFields] = useState([]);
   // The field type the admin has selected before drawing the next box
   const [activeFieldType, setActiveFieldType] = useState('signature');
   const [uploading, setUploading] = useState(false);
   const [generatedLink, setGeneratedLink] = useState('');
   const [isCopied, setIsCopied] = useState(false);
 
-  // ---------------------------------------------------------------------------
-  // AI Suggestion state (Human-in-the-Loop)
-  // suggestions: proposed markers returned by Gemini — not yet in markers[].
-  // Each suggestion has a unique `id` so approve/reject can target it by key.
-  // ---------------------------------------------------------------------------
-  const [suggestions, setSuggestions] = useState([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiError, setAiError] = useState(null);
-  // ID of the suggestion whose label is currently being edited inline
+  // ID of the field whose label is currently being edited inline
   const [editingSuggestionId, setEditingSuggestionId] = useState(null);
   const [editingLabel, setEditingLabel] = useState('');
 
@@ -54,10 +51,9 @@ const UploadView = () => {
   const windowWidth = useWindowWidth();
 
   const [isDrawing, setIsDrawing] = useState(false);
-  // Tracks the active pointer interaction on AI suggestion ghost boxes (move or resize)
-  const [activeAction, setActiveAction] = useState({ id: null, type: 'move' });
-  // Tracks the active pointer interaction on confirmed marker boxes (move or resize)
-  const [activeMarkerAction, setActiveMarkerAction] = useState({ index: null, type: 'move' });
+  // Tracks the single active pointer interaction: array index + action type
+  // type: 'move' | 'resize' | null
+  const [interaction, setInteraction] = useState({ index: null, type: null });
   const [drawStart, setDrawStart] = useState(null);
   const [drawingBox, setDrawingBox] = useState(null);
   const currentPageRef = useRef(null);
@@ -82,8 +78,7 @@ const UploadView = () => {
     setFile(selectedFile);
     setGeneratedLink(''); // Reset link on new upload
     setIsCopied(false);   // Reset copied state on new upload
-    setMarkers([]);
-    setSuggestions([]);   // Discard any AI suggestions from a previous file
+    setFields([]);        // Discard all fields (confirmed and pending) from a previous file
     setAiError(null);
 
     if (selectedFile) {
@@ -145,17 +140,18 @@ const UploadView = () => {
         setPendingBox({ type: ft.type, page: pageNumber, nx: boxNx, ny: boxNy, nw: boxNw, nh: boxNh });
         setPendingLabel('');
       } else {
-        setMarkers((prev) => [
+        // Manually drawn fields are immediately confirmed
+        setFields((prev) => [
           ...prev,
-          { type: ft.type, page: pageNumber, nx: boxNx, ny: boxNy, nw: boxNw, nh: boxNh },
+          { id: crypto.randomUUID(), type: ft.type, page: pageNumber, nx: boxNx, ny: boxNy, nw: boxNw, nh: boxNh, confirmed: true },
         ]);
       }
     }
   };
 
-  // Remove a specific marker by its index in the global markers array
-  const handleRemoveMarker = (indexToRemove) => {
-    setMarkers((prev) => prev.filter((_, i) => i !== indexToRemove));
+  // Remove a field by its unique ID, regardless of whether it is confirmed or pending
+  const handleRemoveField = (idToRemove) => {
+    setFields((prev) => prev.filter((f) => f.id !== idToRemove));
   };
 
   // ---------------------------------------------------------------------------
@@ -168,7 +164,8 @@ const UploadView = () => {
     if (!file) return;
     setIsAnalyzing(true);
     setAiError(null);
-    setSuggestions([]);
+    // Remove any existing unconfirmed AI suggestions before a fresh analysis run
+    setFields((prev) => prev.filter((f) => f.confirmed));
 
     try {
       // Use FileReader instead of btoa() + Uint8Array.
@@ -206,8 +203,11 @@ const UploadView = () => {
       const { suggestions: raw } = await response.json();
       console.log("Suggestions received:", raw);
 
-      // Attach a unique ID to each suggestion so we can target it on approve/reject
-      setSuggestions(raw.map((s) => ({ ...s, id: crypto.randomUUID() })));
+      // Append each AI suggestion as an unconfirmed field with a unique ID
+      setFields((prev) => [
+        ...prev,
+        ...raw.map((s) => ({ ...s, id: crypto.randomUUID(), confirmed: false })),
+      ]);
     } catch (error) {
       console.error('[AI] Analysis error:', error);
       // Also catch quota errors that surfaced through the error message text
@@ -230,67 +230,47 @@ const UploadView = () => {
 
   // ---------------------------------------------------------------------------
   // approveSuggestion
-  // Promotes a ghost suggestion into the confirmed markers array and removes
-  // it from suggestions.  If label editing was open for this suggestion, the
-  // current editingLabel value is used instead of the original label.
+  // Marks an unconfirmed field as confirmed (dashed → solid border).
+  // If an inline label edit was open for this field, the current value is applied.
   // ---------------------------------------------------------------------------
   const approveSuggestion = (id) => {
-    setSuggestions((prev) => {
-      const suggestion = prev.find((s) => s.id === id);
-      if (!suggestion) return prev;
-
-      const confirmedLabel =
-        editingSuggestionId === id ? editingLabel.trim() || suggestion.label : suggestion.label;
-
-      const newMarker = {
-        type:  suggestion.type,
-        page:  suggestion.page,
-        nx:    suggestion.nx,
-        ny:    suggestion.ny,
-        nw:    suggestion.nw,
-        nh:    suggestion.nh,
-        // Only attach label for non-signature, non-date types
-        ...(suggestion.type === 'customText' ? { label: confirmedLabel } : {}),
-      };
-
-      setMarkers((m) => [...m, newMarker]);
-      // Clear edit state if this suggestion was being edited
-      if (editingSuggestionId === id) setEditingSuggestionId(null);
-      return prev.filter((s) => s.id !== id);
-    });
+    setFields((prev) =>
+      prev.map((f) => {
+        if (f.id !== id) return f;
+        const confirmedLabel =
+          editingSuggestionId === id ? editingLabel.trim() || f.label : f.label;
+        return {
+          ...f,
+          confirmed: true,
+          ...(f.type === 'customText' ? { label: confirmedLabel } : {}),
+        };
+      })
+    );
+    if (editingSuggestionId === id) setEditingSuggestionId(null);
   };
 
   // ---------------------------------------------------------------------------
   // rejectSuggestion
-  // Removes a ghost suggestion without adding it to markers.
+  // Removes an unconfirmed field without promoting it.
   // ---------------------------------------------------------------------------
   const rejectSuggestion = (id) => {
-    setSuggestions((prev) => prev.filter((s) => s.id !== id));
+    setFields((prev) => prev.filter((f) => f.id !== id));
     if (editingSuggestionId === id) setEditingSuggestionId(null);
   };
 
-  // Approve all suggestions at once — convenience button
+  // Confirm all pending AI suggestions at once
   const approveAll = () => {
-    setSuggestions((prev) => {
-      const newMarkers = prev.map((s) => ({
-        type:  s.type,
-        page:  s.page,
-        nx:    s.nx,
-        ny:    s.ny,
-        nw:    s.nw,
-        nh:    s.nh,
-        ...(s.type === 'customText' ? { label: s.label } : {}),
-      }));
-      setMarkers((m) => [...m, ...newMarkers]);
-      return [];
-    });
+    setFields((prev) => prev.map((f) => ({ ...f, confirmed: true })));
     setEditingSuggestionId(null);
   };
 
-  // Confirm the pending customText box by attaching the admin's label and adding it to markers
+  // Confirm the pending customText box by attaching the admin's label and adding it to fields
   const confirmPendingBox = () => {
     if (!pendingBox || !pendingLabel.trim()) return;
-    setMarkers((prev) => [...prev, { ...pendingBox, label: pendingLabel.trim() }]);
+    setFields((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), ...pendingBox, label: pendingLabel.trim(), confirmed: true },
+    ]);
     setPendingBox(null);
     setPendingLabel('');
   };
@@ -312,7 +292,7 @@ const UploadView = () => {
   // because all fields are always read together (never paginated individually),
   // so a single document read is more efficient than N sub-collection reads.
   // ---------------------------------------------------------------------------
-  const saveDocumentToFirestore = async (fileId, fileName, fileUrl, confirmedMarkers) => {
+  const saveDocumentToFirestore = async (fileId, fileName, fileUrl, confirmedFields) => {
     const documentRef = doc(db, 'documents', fileId);
 
     await setDoc(documentRef, {
@@ -320,16 +300,16 @@ const UploadView = () => {
       fileUrl,
       ownerId:   currentUser.uid,
       createdAt: new Date().toISOString(),
-      // Map markers to a clean schema; `label` is only included for customText fields
-      fields: confirmedMarkers.map((marker, index) => ({
+      // Map fields to a clean schema; `label` is only included for customText fields
+      fields: confirmedFields.map((field, index) => ({
         index,
-        type:  marker.type  || 'signature',
-        page:  marker.page  ?? 1,
-        nx:    marker.nx,
-        ny:    marker.ny,
-        nw:    marker.nw,
-        nh:    marker.nh,
-        ...(marker.label ? { label: marker.label } : {}),
+        type:  field.type  || 'signature',
+        page:  field.page  ?? 1,
+        nx:    field.nx,
+        ny:    field.ny,
+        nw:    field.nw,
+        nh:    field.nh,
+        ...(field.label ? { label: field.label } : {}),
       })),
     });
   };
@@ -339,11 +319,13 @@ const UploadView = () => {
       alert('Please select a PDF file first.');
       return;
     }
-    if (markers.length === 0 && suggestions.length > 0) {
-      alert(`You have ${suggestions.length} pending AI suggestions. Please approve or reject them before uploading.`);
+    const confirmedFields  = fields.filter((f) => f.confirmed);
+    const pendingFields    = fields.filter((f) => !f.confirmed);
+    if (confirmedFields.length === 0 && pendingFields.length > 0) {
+      alert(`You have ${pendingFields.length} pending AI suggestions. Please approve or reject them before uploading.`);
       return;
     }
-    if (markers.length === 0) {
+    if (confirmedFields.length === 0) {
       alert('Please drag on the document to place at least one field.');
       return;
     }
@@ -364,7 +346,7 @@ const UploadView = () => {
       const fileUrl = await getDownloadURL(storageRef);
 
       // Step 3 — save the full document record (including confirmed fields) to Firestore
-      await saveDocumentToFirestore(fileId, file.name, fileUrl, markers);
+      await saveDocumentToFirestore(fileId, file.name, fileUrl, confirmedFields);
 
       // Step 4 — generate and display the shareable signing link
       const link = `${window.location.origin}/sign/${fileId}`;
@@ -550,7 +532,7 @@ const UploadView = () => {
           )}
 
           {/* Pending AI suggestions banner */}
-          {suggestions.length > 0 && (
+          {fields.some((f) => !f.confirmed) && (
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -563,7 +545,7 @@ const UploadView = () => {
               fontSize: '0.88rem',
               color: '#4c1d95',
             }}>
-              <span>🤖 <strong>{suggestions.length}</strong> AI suggestion{suggestions.length !== 1 ? 's' : ''} pending review — approve or reject each field below.</span>
+              <span>🤖 <strong>{fields.filter((f) => !f.confirmed).length}</strong> AI suggestion{fields.filter((f) => !f.confirmed).length !== 1 ? 's' : ''} pending review — approve or reject each field below.</span>
               <button
                 onClick={approveAll}
                 style={{
@@ -581,7 +563,7 @@ const UploadView = () => {
                 ✓ Approve All
               </button>
               <button
-                onClick={() => setSuggestions([])}
+                onClick={() => setFields((prev) => prev.filter((f) => f.confirmed))}
                 style={{
                   padding: '4px 10px',
                   borderRadius: 5,
@@ -638,63 +620,40 @@ const UploadView = () => {
             >
               {Array.from(new Array(numPages), (el, index) => {
                 const pageNumber = index + 1;
-                // All confirmed markers that belong to this page, with their global index
-                const pageMarkers = markers
-                  .map((m, i) => ({ ...m, globalIndex: i }))
-                  .filter((m) => m.page === pageNumber);
+                // All fields that belong to this page, with their position in the global array
+                const pageFields = fields
+                  .map((f, i) => ({ ...f, globalIndex: i }))
+                  .filter((f) => f.page === pageNumber);
 
                 return (
                   <div
                     key={`page_${pageNumber}`}
                     className="pdf-page-wrapper"
                     style={{
-                      cursor: (activeAction.id || activeMarkerAction.index !== null) ? 'grabbing' : 'crosshair',
+                      cursor: interaction.index !== null ? (interaction.type === 'resize' ? 'nwse-resize' : 'grabbing') : 'crosshair',
                       userSelect: 'none',
                     }}
                     onMouseDown={(e) => handleMouseDown(e, pageNumber)}
                     onMouseMove={(e) => handleMouseMove(e, pageNumber)}
                     onMouseUp={(e) => handleMouseUp(e, pageNumber)}
                     onPointerMove={(e) => {
+                      if (interaction.index === null) return;
                       const rect = e.currentTarget.getBoundingClientRect();
                       const curNx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
                       const curNy = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
-
-                      // Handle suggestion ghost box — move or resize
-                      if (activeAction.id) {
-                        setSuggestions((prev) =>
-                          prev.map((s) => {
-                            if (s.id !== activeAction.id) return s;
-                            if (activeAction.type === 'move') return { ...s, nx: curNx, ny: curNy };
-                            // Resize: distance from field's fixed top-left to cursor = new dimensions
-                            const newNw = Math.max(0.05, Math.min(1 - s.nx, curNx - s.nx));
-                            const newNh = Math.max(0.02, Math.min(1 - s.ny, curNy - s.ny));
-                            return { ...s, nw: newNw, nh: newNh };
-                          })
-                        );
-                      }
-
-                      // Handle confirmed marker — move or resize
-                      if (activeMarkerAction.index !== null) {
-                        setMarkers((prev) =>
-                          prev.map((m, i) => {
-                            if (i !== activeMarkerAction.index) return m;
-                            if (activeMarkerAction.type === 'move') return { ...m, nx: curNx, ny: curNy };
-                            // Resize: distance from marker's fixed top-left to cursor = new dimensions
-                            const newNw = Math.max(0.05, Math.min(1 - m.nx, curNx - m.nx));
-                            const newNh = Math.max(0.02, Math.min(1 - m.ny, curNy - m.ny));
-                            return { ...m, nw: newNw, nh: newNh };
-                          })
-                        );
-                      }
+                      setFields((prev) =>
+                        prev.map((f, i) => {
+                          if (i !== interaction.index) return f;
+                          if (interaction.type === 'move') return { ...f, nx: curNx, ny: curNy };
+                          // Resize: distance from field's fixed top-left corner to the cursor
+                          const newNw = Math.max(0.05, Math.min(1 - f.nx, curNx - f.nx));
+                          const newNh = Math.max(0.02, Math.min(1 - f.ny, curNy - f.ny));
+                          return { ...f, nw: newNw, nh: newNh };
+                        })
+                      );
                     }}
-                    onPointerUp={() => {
-                      setActiveAction({ id: null, type: 'move' });
-                      setActiveMarkerAction({ index: null, type: 'move' });
-                    }}
-                    onPointerLeave={() => {
-                      setActiveAction({ id: null, type: 'move' });
-                      setActiveMarkerAction({ index: null, type: 'move' });
-                    }}
+                    onPointerUp={() => setInteraction({ index: null, type: null })}
+                    onPointerLeave={() => setInteraction({ index: null, type: null })}
                   >
                     <Page
                       pageNumber={pageNumber}
@@ -702,7 +661,7 @@ const UploadView = () => {
                       renderTextLayer={false}
                       renderAnnotationLayer={false}
                     />
-                    {/* Live preview rectangle while the user is dragging on this page */}
+                    {/* Live preview rectangle while the user is drawing a new box on this page */}
                     {isDrawing && currentPageRef.current === pageNumber && drawingBox && (
                       <div
                         style={{
@@ -717,52 +676,181 @@ const UploadView = () => {
                         }}
                       />
                     )}
-                    {/* Render all confirmed markers for this page with type-specific color and label */}
-                    {pageMarkers.map((marker) => {
-                      const color = getMarkerColor(marker);
-                      const isActiveMarker = activeMarkerAction.index === marker.globalIndex;
+
+                    {/* Unified field renderer: confirmed fields have a solid border, pending AI fields have dashed */}
+                    {pageFields.map((field) => {
+                      const color       = getMarkerColor(field);
+                      const isActive    = interaction.index === field.globalIndex;
+                      const isEditing   = editingSuggestionId === field.id;
+                      const borderStyle = field.confirmed ? `2px solid ${color}` : `2px dashed ${color}`;
+
                       return (
                         <div
-                          key={marker.globalIndex}
-                          className="signature-marker"
+                          key={field.id}
+                          onMouseDown={(e) => e.stopPropagation()} // Prevent triggering a new draw box
                           onPointerDown={(e) => {
-                            // Body pointer-down initiates a move interaction
+                            // Field body pointer-down starts a move interaction
                             e.stopPropagation();
                             e.preventDefault();
-                            setActiveMarkerAction({ index: marker.globalIndex, type: 'move' });
+                            setInteraction({ index: field.globalIndex, type: 'move' });
                           }}
                           style={{
-                            left: `${marker.nx * 100}%`,
-                            top: `${marker.ny * 100}%`,
-                            width: `${marker.nw * 100}%`,
-                            height: `${marker.nh * 100}%`,
-                            borderColor: color,
-                            backgroundColor: `${color}28`,
+                            position:        'absolute',
+                            left:            `${field.nx * 100}%`,
+                            top:             `${field.ny * 100}%`,
+                            width:           `${field.nw * 100}%`,
+                            height:          `${field.nh * 100}%`,
+                            border:          borderStyle,
+                            backgroundColor: `${color}22`,
+                            borderRadius:    4,
+                            boxSizing:       'border-box',
+                            pointerEvents:   'all',
+                            zIndex:          10,
+                            cursor:          isActive && interaction.type === 'move' ? 'grabbing' : 'grab',
                             color,
-                            cursor: isActiveMarker && activeMarkerAction.type === 'move' ? 'grabbing' : 'grab',
                           }}
                         >
-                          <span>{getMarkerLabel(marker)}</span>
-                          {/* Remove button stops propagation so it does not start a drag or resize */}
-                          <button
-                            className="marker-remove-btn"
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onPointerDown={(e) => e.stopPropagation()}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemoveMarker(marker.globalIndex);
-                            }}
-                            title="Remove this field"
-                          >
-                            &times;
-                          </button>
-                          {/* Resize handle — drag this corner to change the field's width and height */}
+                          {/* Field label shown inside the box */}
+                          <span style={{
+                            position:   'absolute',
+                            bottom:     '100%',
+                            left:       0,
+                            fontSize:   '0.65rem',
+                            fontWeight: 700,
+                            color,
+                            whiteSpace: 'nowrap',
+                            lineHeight: 1.2,
+                            padding:    '1px 3px',
+                            background: 'white',
+                            borderRadius: 2,
+                            transform:  'translateY(-1px)',
+                          }}>
+                            {!field.confirmed && '🤖 '}{field.label || field.type}
+                          </span>
+
+                          {/* Inline label editor — shown when the pencil icon is clicked for customText fields */}
+                          {isEditing && (
+                            <div
+                              style={{
+                                position:   'absolute',
+                                top:        '100%',
+                                left:       0,
+                                zIndex:     20,
+                                background: 'white',
+                                border:     '1px solid #c4b5fd',
+                                borderRadius: 6,
+                                padding:    '6px 8px',
+                                boxShadow:  '0 4px 12px rgba(0,0,0,0.15)',
+                                minWidth:   140,
+                                display:    'flex',
+                                gap:        4,
+                              }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                autoFocus
+                                value={editingLabel}
+                                onChange={(e) => setEditingLabel(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') approveSuggestion(field.id);
+                                  if (e.key === 'Escape') setEditingSuggestionId(null);
+                                }}
+                                style={{
+                                  flex:       1,
+                                  border:     '1px solid #d1d5db',
+                                  borderRadius: 4,
+                                  padding:    '3px 6px',
+                                  fontSize:   '0.8rem',
+                                  outline:    'none',
+                                  minWidth:   0,
+                                }}
+                                placeholder="Field label…"
+                              />
+                              <button
+                                onClick={() => approveSuggestion(field.id)}
+                                style={{
+                                  background: '#7c3aed', color: 'white',
+                                  border: 'none', borderRadius: 4,
+                                  padding: '3px 7px', cursor: 'pointer', fontWeight: 700,
+                                }}
+                                title="Save label"
+                              >
+                                ✓
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Floating action bar — always visible for all fields */}
+                          <div style={{
+                            position:      'absolute',
+                            top:           2,
+                            right:         2,
+                            display:       'flex',
+                            gap:           3,
+                            pointerEvents: 'all',
+                          }}>
+                            {/* Approve button — only shown for unconfirmed AI suggestions */}
+                            {!field.confirmed && (
+                              <button
+                                title="Approve this field"
+                                onClick={(e) => { e.stopPropagation(); approveSuggestion(field.id); }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                style={{
+                                  width: 22, height: 22, borderRadius: 4,
+                                  border: 'none', background: '#059669',
+                                  color: 'white', fontSize: '0.75rem',
+                                  cursor: 'pointer', fontWeight: 700,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}
+                              >✓</button>
+                            )}
+
+                            {/* Edit label button — only for unconfirmed customText fields */}
+                            {!field.confirmed && field.type === 'customText' && (
+                              <button
+                                title="Edit label before approving"
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingSuggestionId(isEditing ? null : field.id);
+                                  setEditingLabel(field.label);
+                                }}
+                                style={{
+                                  width: 22, height: 22, borderRadius: 4,
+                                  border: 'none', background: '#2563eb',
+                                  color: 'white', fontSize: '0.7rem',
+                                  cursor: 'pointer', fontWeight: 700,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}
+                              >✎</button>
+                            )}
+
+                            {/* Delete button — always visible for every field */}
+                            <button
+                              title="Remove this field"
+                              onClick={(e) => { e.stopPropagation(); handleRemoveField(field.id); }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              style={{
+                                width: 22, height: 22, borderRadius: 4,
+                                border: 'none', background: '#dc2626',
+                                color: 'white', fontSize: '0.8rem',
+                                cursor: 'pointer', fontWeight: 700,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              }}
+                            >×</button>
+                          </div>
+
+                          {/* Resize handle — drag the bottom-right corner to change width and height */}
                           <div
                             title="Resize this field"
+                            onMouseDown={(e) => e.stopPropagation()}
                             onPointerDown={(e) => {
                               e.stopPropagation();
                               e.preventDefault();
-                              setActiveMarkerAction({ index: marker.globalIndex, type: 'resize' });
+                              setInteraction({ index: field.globalIndex, type: 'resize' });
                             }}
                             style={{
                               position:        'absolute',
@@ -778,194 +866,6 @@ const UploadView = () => {
                         </div>
                       );
                     })}
-
-                    {/* Ghost markers — AI suggestions pending admin review */}
-                    {suggestions
-                      .filter((s) => s.page === pageNumber)
-                      .map((suggestion) => {
-                        // Confidence shades the ghost: ≥80% = green-tinted, else amber
-                        const isHighConf  = suggestion.confidence >= 0.8;
-                        const ghostBorder = isHighConf ? '#7c3aed' : '#d97706';
-                        const ghostBg     = isHighConf ? 'rgba(124,58,237,0.10)' : 'rgba(217,119,6,0.10)';
-                        const isEditing   = editingSuggestionId === suggestion.id;
-
-                        return (
-                          <div
-                            key={suggestion.id}
-                            onMouseDown={(e) => e.stopPropagation()} // Prevent triggering a new draw box
-                            onPointerDown={(e) => {
-                              // Body pointer-down initiates a move interaction
-                              e.stopPropagation();
-                              e.preventDefault(); // Prevent text selection during drag
-                              setActiveAction({ id: suggestion.id, type: 'move' });
-                            }}
-                            style={{
-                              position:        'absolute',
-                              left:            `${suggestion.nx * 100}%`,
-                              top:             `${suggestion.ny * 100}%`,
-                              width:           `${suggestion.nw * 100}%`,
-                              height:          `${suggestion.nh * 100}%`,
-                              border:          `2px dashed ${ghostBorder}`,
-                              backgroundColor: ghostBg,
-                              borderRadius:    4,
-                              boxSizing:       'border-box',
-                              pointerEvents:   'all',
-                              zIndex:          10,
-                              cursor:          activeAction.id === suggestion.id && activeAction.type === 'move' ? 'grabbing' : 'grab',
-                            }}
-                          >
-                            {/* Label row inside the ghost box */}
-                            <span style={{
-                              position:   'absolute',
-                              bottom:     '100%',
-                              left:       0,
-                              fontSize:   '0.65rem',
-                              fontWeight: 700,
-                              color:      ghostBorder,
-                              whiteSpace: 'nowrap',
-                              lineHeight: 1.2,
-                              padding:    '1px 3px',
-                              background: 'white',
-                              borderRadius: 2,
-                              transform:  'translateY(-1px)',
-                            }}>
-                              🤖 {suggestion.label}
-                              {' '}({Math.round(suggestion.confidence * 100)}%)
-                            </span>
-
-                            {/* Inline label editor — shown when the pencil icon is clicked */}
-                            {isEditing && (
-                              <div
-                                style={{
-                                  position:   'absolute',
-                                  top:        '100%',
-                                  left:       0,
-                                  zIndex:     20,
-                                  background: 'white',
-                                  border:     '1px solid #c4b5fd',
-                                  borderRadius: 6,
-                                  padding:    '6px 8px',
-                                  boxShadow:  '0 4px 12px rgba(0,0,0,0.15)',
-                                  minWidth:   140,
-                                  display:    'flex',
-                                  gap:        4,
-                                }}
-                                onMouseDown={(e) => e.stopPropagation()}
-                              >
-                                <input
-                                  autoFocus
-                                  value={editingLabel}
-                                  onChange={(e) => setEditingLabel(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') approveSuggestion(suggestion.id);
-                                    if (e.key === 'Escape') setEditingSuggestionId(null);
-                                  }}
-                                  style={{
-                                    flex:       1,
-                                    border:     '1px solid #d1d5db',
-                                    borderRadius: 4,
-                                    padding:    '3px 6px',
-                                    fontSize:   '0.8rem',
-                                    outline:    'none',
-                                    minWidth:   0,
-                                  }}
-                                  placeholder="Field label…"
-                                />
-                                <button
-                                  onClick={() => approveSuggestion(suggestion.id)}
-                                  style={{
-                                    background: '#7c3aed', color: 'white',
-                                    border: 'none', borderRadius: 4,
-                                    padding: '3px 7px', cursor: 'pointer', fontWeight: 700,
-                                  }}
-                                  title="Approve with this label"
-                                >
-                                  ✓
-                                </button>
-                              </div>
-                            )}
-
-                            {/* Resize handle — drag the bottom-right corner to change width and height */}
-                            <div
-                              title="Resize this field"
-                              onMouseDown={(e) => e.stopPropagation()}
-                              onPointerDown={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                setActiveAction({ id: suggestion.id, type: 'resize' });
-                              }}
-                              style={{
-                                position:        'absolute',
-                                bottom:          0,
-                                right:           0,
-                                width:           10,
-                                height:          10,
-                                backgroundColor: ghostBorder,
-                                cursor:          'nwse-resize',
-                                borderRadius:    '2px 0 0 0',
-                              }}
-                            />
-
-                            {/* Floating action bar — approve / edit / reject */}
-                            <div style={{
-                              position:       'absolute',
-                              top:            2,
-                              right:          2,
-                              display:        'flex',
-                              gap:            3,
-                              pointerEvents:  'all',
-                            }}>
-                              {/* Approve button */}
-                              <button
-                                title="Approve this field"
-                                onClick={(e) => { e.stopPropagation(); approveSuggestion(suggestion.id); }}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                style={{
-                                  width: 22, height: 22, borderRadius: 4,
-                                  border: 'none', background: '#059669',
-                                  color: 'white', fontSize: '0.75rem',
-                                  cursor: 'pointer', fontWeight: 700,
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                }}
-                              >✓</button>
-
-                              {/* Edit label button — only shown for customText */}
-                              {suggestion.type === 'customText' && (
-                                <button
-                                  title="Edit label before approving"
-                                  onMouseDown={(e) => e.stopPropagation()}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingSuggestionId(isEditing ? null : suggestion.id);
-                                    setEditingLabel(suggestion.label);
-                                  }}
-                                  style={{
-                                    width: 22, height: 22, borderRadius: 4,
-                                    border: 'none', background: '#2563eb',
-                                    color: 'white', fontSize: '0.7rem',
-                                    cursor: 'pointer', fontWeight: 700,
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  }}
-                                >✎</button>
-                              )}
-
-                              {/* Reject button */}
-                              <button
-                                title="Reject this suggestion"
-                                onClick={(e) => { e.stopPropagation(); rejectSuggestion(suggestion.id); }}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                style={{
-                                  width: 22, height: 22, borderRadius: 4,
-                                  border: 'none', background: '#dc2626',
-                                  color: 'white', fontSize: '0.8rem',
-                                  cursor: 'pointer', fontWeight: 700,
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                }}
-                              >✕</button>
-                            </div>
-                          </div>
-                        );
-                      })}
                   </div>
                 );
               })}
@@ -981,8 +881,8 @@ const UploadView = () => {
           <div className="action-footer-inner">
             <p className="action-footer-status">
               Confirmed Fields:{' '}
-              <span className="action-footer-count">{markers.length}</span>
-              {suggestions.length > 0 && (
+              <span className="action-footer-count">{fields.filter((f) => f.confirmed).length}</span>
+              {fields.some((f) => !f.confirmed) && (
                 <span style={{
                   marginLeft: 10,
                   padding: '1px 8px',
@@ -992,13 +892,13 @@ const UploadView = () => {
                   fontWeight: 600,
                   fontSize: '0.8rem',
                 }}>
-                  {suggestions.length} AI pending
+                  {fields.filter((f) => !f.confirmed).length} AI pending
                 </span>
               )}
             </p>
             <button
               onClick={handleUpload}
-              disabled={uploading || markers.length === 0}
+              disabled={uploading || fields.filter((f) => f.confirmed).length === 0}
               className="btn btn-primary"
             >
               {uploading ? 'Uploading...' : 'Upload & Generate Link'}
