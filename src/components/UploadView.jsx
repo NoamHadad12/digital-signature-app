@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { storage, db } from '../firebase';
+import { storage } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { ref, uploadBytes } from 'firebase/storage';
-import { doc, setDoc } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
+import { getMarkerColor, getMarkerLabel, useWindowWidth } from '../utils/pdfHelpers';
+import { saveDocument } from '../services/dbService';
 
 // Set the worker source from a reliable CDN to ensure compatibility
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -19,34 +20,7 @@ const FIELD_TYPES = [
   { key: 'customText', label: '+ Custom Field', type: 'customText', color: '#2563eb' },
 ];
 
-// Return the human-readable label for any marker (supports new and legacy formats)
-const getFieldLabel = (marker) => {
-  if (!marker.type || marker.type === 'signature') return 'Sign Here';
-  if (marker.type === 'date' || marker.subtype === 'date') return 'Date';
-  if (marker.type === 'customText') return marker.label || 'Custom Field';
-  // Legacy subtype-based text markers
-  if (marker.subtype === 'firstName') return 'First Name';
-  if (marker.subtype === 'lastName')  return 'Last Name';
-  return 'Field';
-};
 
-// Return the accent color for any marker type
-const getMarkerColor = (marker) => {
-  if (!marker.type || marker.type === 'signature') return '#e53e3e';
-  if (marker.type === 'date' || marker.subtype === 'date') return '#059669';
-  const LEGACY = { firstName: '#2563eb', lastName: '#7c3aed' };
-  return LEGACY[marker.subtype] || '#2563eb';
-};
-
-const useWindowWidth = () => {
-  const [width, setWidth] = useState(window.innerWidth);
-  useEffect(() => {
-    const handler = () => setWidth(window.innerWidth);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
-  return width;
-};
 
 const UploadView = () => {
   // Expose the logout function from auth context
@@ -192,17 +166,12 @@ const UploadView = () => {
 
       const fileId = uuidv4();
 
-      // Upload the PDF to Firebase Storage
+      // Step 1 — upload the PDF binary to Firebase Storage
       const storageRef = ref(storage, `pdfs/${fileId}.pdf`);
       await uploadBytes(storageRef, file);
 
-      // Save metadata with the markers array to Firestore
-      const docRef = doc(db, 'documents', fileId);
-      await setDoc(docRef, {
-        fileRef: `pdfs/${fileId}.pdf`,
-        markers: markers,
-        createdAt: new Date().toISOString(),
-      });
+      // Step 2 — save the structured document record and markers to Firestore
+      await saveDocument(fileId, `pdfs/${fileId}.pdf`, markers);
 
       // 3. Generate and display the Link
       const link = `${window.location.origin}/sign/${fileId}`;
@@ -392,7 +361,7 @@ const UploadView = () => {
                             color,
                           }}
                         >
-                          <span>{getFieldLabel(marker)}</span>
+                          <span>{getMarkerLabel(marker)}</span>
                           {/* Remove button stops propagation so it does not start a new drag */}
                           <button
                             className="marker-remove-btn"

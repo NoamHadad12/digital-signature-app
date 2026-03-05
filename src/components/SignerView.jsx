@@ -1,58 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { storage, db } from '../firebase';
+import { storage } from '../firebase';
 import { ref, getDownloadURL } from 'firebase/storage';
-import { doc, getDoc } from 'firebase/firestore';
 import { Document, Page, pdfjs } from 'react-pdf';
 import SignaturePad from 'react-signature-canvas';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
+import { getMarkerColor, getMarkerLabel, getMarkerKey, useWindowWidth } from '../utils/pdfHelpers';
+import { fetchDocument } from '../services/dbService';
 
 // Set the worker source from a reliable CDN to ensure compatibility
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 // Resolve issue with some versions of react-signature-canvas
 const SignatureCanvas = SignaturePad.default || SignaturePad;
-
-// Return a stable key for a marker's value in the fieldValues map
-// Signature markers have no key; all text variants return a string key
-const getMarkerKey = (marker) => {
-  if (!marker.type || marker.type === 'signature') return null;
-  if (marker.type === 'date' || marker.subtype === 'date') return '__date__';
-  if (marker.type === 'customText') return marker.label || 'custom';
-  // Legacy subtype-based markers for backward compatibility
-  if (marker.subtype === 'firstName') return 'First Name';
-  if (marker.subtype === 'lastName')  return 'Last Name';
-  return marker.subtype || 'field';
-};
-
-// Return the display label for any marker format
-const getMarkerLabel = (marker) => {
-  if (!marker.type || marker.type === 'signature') return 'Sign Here';
-  if (marker.type === 'date' || marker.subtype === 'date') return 'Date';
-  if (marker.type === 'customText') return marker.label || 'Custom Field';
-  if (marker.subtype === 'firstName') return 'First Name';
-  if (marker.subtype === 'lastName')  return 'Last Name';
-  return 'Field';
-};
-
-// Return the accent color for any marker format
-const getMarkerColor = (marker) => {
-  if (!marker.type || marker.type === 'signature') return '#e53e3e';
-  if (marker.type === 'date' || marker.subtype === 'date') return '#059669';
-  const LEGACY = { firstName: '#2563eb', lastName: '#7c3aed' };
-  return LEGACY[marker.subtype] || '#2563eb';
-};
-
-const useWindowWidth = () => {
-  const [width, setWidth] = useState(window.innerWidth);
-  useEffect(() => {
-    const handler = () => setWidth(window.innerWidth);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
-  return width;
-};
 
 const SignerView = () => {
   const { documentId } = useParams();
@@ -83,28 +44,18 @@ const SignerView = () => {
     // Track the object URL so the cleanup function can revoke it without a stale closure
     let objectUrl = null;
 
-    const fetchDocument = async () => {
+    const loadDocument = async () => {
       if (!documentId) return;
 
       try {
-        // Fetch placement metadata from Firestore
-        const docRef = doc(db, 'documents', documentId);
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          // Support the new markers array and legacy single signatureCoords field
-          if (Array.isArray(data.markers) && data.markers.length > 0) {
-            setMarkers(data.markers);
-            // Date is already pre-filled in fieldValues state initialiser; nothing extra needed.
-          } else if (data.signatureCoords) {
-            setMarkers([data.signatureCoords]);
-          }
+        // Load markers from Firestore via dbService (supports new sub-collection + legacy formats)
+        const result = await fetchDocument(documentId);
+        if (result) {
+          setMarkers(result.markers);
         }
 
+        // Fetch the PDF as a blob to avoid CORS issues with react-pdf
         const fileRef = ref(storage, `pdfs/${documentId}.pdf`);
-
-        // Get the authenticated download URL
         let url = await getDownloadURL(fileRef);
 
         // Ensure the URL retrieves binary media content
@@ -112,22 +63,19 @@ const SignerView = () => {
           url += (url.includes('?') ? '&' : '?') + 'alt=media';
         }
 
-        // Fetch the PDF as a blob to avoid CORS issues with react-pdf
         const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error('Failed to fetch the PDF file content.');
-        }
+        if (!response.ok) throw new Error('Failed to fetch the PDF file content.');
 
         const blob = await response.blob();
         objectUrl = URL.createObjectURL(blob);
         setPdfUrl(objectUrl);
 
       } catch (error) {
-        console.error("Error fetching document:", error);
+        console.error('Error fetching document:', error);
       }
     };
 
-    fetchDocument();
+    loadDocument();
 
     // Revoke the object URL on unmount using the local variable, not the stale state value
     return () => {
