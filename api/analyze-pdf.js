@@ -40,9 +40,9 @@ async function callGemini(base64Pdf) {
     throw new Error('base64Pdf appears to be empty or too short after stripping the data-URI prefix.');
   }
 
-  // Strict Initialization: Force API Version v1 via getGenerativeModel
-  // Passing apiVersion as the second argument ensures it does not fallback to v1beta,
-  // which is a common cause for 404 Not Found errors.
+  // Strict Initialization: Force API Version v1beta via getGenerativeModel
+  // Passing apiVersion as the second argument ensures it uses v1beta,
+  // which is required for the gemini-2.5-flash model.
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY.trim());
   
   const model = genAI.getGenerativeModel(
@@ -53,7 +53,7 @@ async function callGemini(base64Pdf) {
         maxOutputTokens: 2048,
       },
     },
-    { apiVersion: "v1" }
+    { apiVersion: "v1beta" }
   );
 
   // ---------------------------------------------------------------------------
@@ -83,7 +83,7 @@ Example valid output:
   { "type": "customText", "label": "Full Name",  "page": 1, "nx": 0.05, "ny": 0.55, "nw": 0.40, "nh": 0.05, "confidence": 0.88 }
 ]`;
 
-  console.log("[STRICT DEBUG] Calling Gemini v1 with model: gemini-2.5-flash");
+  console.log("[FINAL TEST] Calling Gemini v1beta with model: gemini-2.5-flash");
 
   // Send the prompt text + PDF inline data. 
   // cleanBase64 has had any data-URI prefix stripped, so only raw base64 is sent.
