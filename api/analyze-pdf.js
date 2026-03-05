@@ -66,7 +66,7 @@ async function callGemini(base64Pdf) {
  // ---------------------------------------------------------------------------
   // Prompt engineering - Optimized for visually reversed Hebrew text
   // ---------------------------------------------------------------------------
-  const SYSTEM_PROMPT = `You are a visual document layout analyzer. Find every blank horizontal line or designated area intended for signatures, dates, or user input. Calculate the ACTUAL fractional coordinates (0.0 to 1.0) for each field's location. Return a JSON array of objects. Each object MUST have exactly these keys: 'type' (string: 'signature', 'date', or 'customText'), 'label' (string: the detected field name), 'nx' (float: x-coordinate), 'ny' (float: y-coordinate), 'nw' (float: width), 'nh' (float: height), and 'page' (integer: 1).`;
+  const SYSTEM_PROMPT = `You are a visual document layout analyzer. Visually scan the document and find every blank horizontal line intended for input, signatures, or dates. Calculate the ACTUAL relative X and Y coordinates (0.0 to 1.0) for each field. Return ONLY a valid JSON array. Here is an example of the expected format showing two fields with DIFFERENT coordinates to demonstrate that you must calculate unique positions for every line you find: [{"type": "date", "label": "Date Field", "nx": 0.15, "ny": 0.22, "nw": 0.2, "nh": 0.05, "page": 1}, {"type": "signature", "label": "Signature Field", "nx": 0.60, "ny": 0.85, "nw": 0.2, "nh": 0.05, "page": 1}].`;
 
   console.log("[FINAL TEST] Calling Gemini v1beta with model: gemini-2.5-flash");
 
