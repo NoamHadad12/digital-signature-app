@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { storage, db } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 import { ref, uploadBytes } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
@@ -48,6 +49,9 @@ const useWindowWidth = () => {
 };
 
 const UploadView = () => {
+  // Expose the logout function from auth context
+  const { logout } = useAuth();
+
   const [file, setFile] = useState(null);
   const [fileUrl, setFileUrl] = useState(null);
   const [numPages, setNumPages] = useState(null);
@@ -74,11 +78,19 @@ const UploadView = () => {
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
+
+    // Reject files larger than 10 MB before doing anything else
+    if (selectedFile && selectedFile.size > 10 * 1024 * 1024) {
+      alert('File is too large! Maximum allowed size is 10MB.');
+      e.target.value = ''; // Clear the file input so the user can pick again
+      return;
+    }
+
     setFile(selectedFile);
     setGeneratedLink(''); // Reset link on new upload
-    setIsCopied(false); // Reset copied state on new upload
+    setIsCopied(false);   // Reset copied state on new upload
     setMarkers([]);
-    
+
     if (selectedFile) {
       setFileUrl(URL.createObjectURL(selectedFile));
     } else {
@@ -222,6 +234,14 @@ const UploadView = () => {
 
   return (
     <div className="upload-view">
+      {/* Sign Out button — fixed to the top-right corner of the upload card */}
+      <button
+        onClick={logout}
+        className="btn btn-secondary signout-btn"
+      >
+        Sign Out
+      </button>
+
       <h1>SignFlow</h1>
       <p className="subtitle">Upload a PDF document to generate a shareable signing link.</p>
       

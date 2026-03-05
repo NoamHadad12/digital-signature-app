@@ -4,6 +4,8 @@ import { initializeApp } from "firebase/app";
 import { getStorage } from "firebase/storage";
 import { getFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
+// Import Firebase Auth and the Google sign-in provider
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
 // Pull the configuration from the hidden .env.local file
 const firebaseConfig = {
@@ -29,4 +31,7 @@ isSupported().then((supported) => {
 // Initialize Cloud Storage and Firestore and export them
 export const storage = getStorage(app);
 export const db = getFirestore(app);
+// Export the auth instance and Google provider for use across the app
+export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
 

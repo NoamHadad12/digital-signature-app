@@ -29,6 +29,7 @@ body {
 
 /* UploadView Styles */
 .upload-view {
+  position: relative;
   background: var(--container-background);
   padding: 40px;
   border-radius: var(--border-radius);
@@ -672,5 +673,92 @@ body {
   .form-sig-wrap {
     height: 68px;
   }
+}
+
+/* ── Sign Out Button ─────────────────────────────────────────── */
+.signout-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  padding: 6px 16px;
+  font-size: 0.82rem;
+}
+
+/* ── Login Page ─────────────────────────────────────────────── */
+.login-view {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80vh;
+}
+
+.login-card {
+  background: var(--container-background);
+  padding: 48px 40px;
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
+  text-align: center;
+  width: 100%;
+  max-width: 380px;
+}
+
+.login-title {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  margin-bottom: 4px;
+}
+
+.login-subtitle {
+  color: var(--text-light-color);
+  font-size: 0.95rem;
+  margin-bottom: 32px;
+}
+
+.login-error {
+  background: #fff0f0;
+  color: #c0392b;
+  border: 1px solid #f5c6cb;
+  border-radius: var(--border-radius);
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  margin-bottom: 20px;
+  text-align: left;
+}
+
+/* Google sign-in button styled with official Google branding guidelines */
+.btn-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 20px;
+  background: #fff;
+  color: #3c4043;
+  border: 1.5px solid #dadce0;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+  font-family: var(--font-family);
+}
+
+.btn-google:hover:not(:disabled) {
+  background: #f8f9fa;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  transform: none;
+}
+
+.btn-google:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.google-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 

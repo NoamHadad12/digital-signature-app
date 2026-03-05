@@ -8,9 +8,11 @@ service firebase.storage {
       allow read;
 
       // Allow write (create/update) operations only if:
-      // 1. The uploaded file is a PDF.
-      // 2. The file size is less than 5MB.
-      allow write: if request.resource.contentType == 'application/pdf'
+      // 1. The user is authenticated (must be signed in via Firebase Auth).
+      // 2. The uploaded file is a PDF.
+      // 3. The file size is less than 5MB.
+      allow write: if request.auth != null
+                   && request.resource.contentType == 'application/pdf'
                    && request.resource.size < 5 * 1024 * 1024;
       
       // Explicitly deny delete operations to prevent unauthorized removal of documents.
