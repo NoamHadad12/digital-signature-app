@@ -43,11 +43,11 @@ export const config = {
 // ---------------------------------------------------------------------------
 async function callGemini(base64Pdf) {
   // Force trim to eliminate hidden newlines or spaces Vercel can inject into env vars.
-  const key = (process.env.GEMINI_API_KEY || '').trim();
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
 
   // Guard: fail immediately if the key is missing or looks like an unexpanded
   // template literal such as "${GEMINI_API_KEY}" — a common misconfiguration.
-  if (!key || key.startsWith('${')) {
+  if (!apiKey || apiKey.startsWith('${')) {
     throw new Error('GEMINI_API_KEY is not set or was not expanded by the environment.');
   }
 
@@ -57,7 +57,7 @@ async function callGemini(base64Pdf) {
   // always open — this is the root cause of the "limit: 0" 429 responses.
   const modelName = 'gemini-1.5-flash-8b';
   console.log('[analyze-pdf] Using model:', modelName);
-  console.log(`[analyze-pdf] Key prefix: ${key.slice(0, 6)}...`);
+  console.log(`[analyze-pdf] Key prefix: ${apiKey.slice(0, 6)}...`);
 
   // Strip any data-URI prefix the frontend may have included, e.g.:
   // "data:application/pdf;base64,JVBERi0x..."
@@ -71,7 +71,10 @@ async function callGemini(base64Pdf) {
     throw new Error('base64Pdf appears to be empty or too short after stripping the data-URI prefix.');
   }
 
-  const genAI = new GoogleGenerativeAI(key, { apiVersion: 'v1' });
+  // Explicitly pin the SDK to the v1 stable endpoint.
+  // Without this, the SDK defaults to v1beta, which returns 404 for GA models.
+  const genAI = new GoogleGenerativeAI(apiKey, { apiVersion: 'v1' });
+  console.log('[DEBUG] API Version set to v1');
   const model = genAI.getGenerativeModel({
     model: modelName,
     generationConfig: {
