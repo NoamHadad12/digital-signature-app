@@ -51,11 +51,11 @@ async function callGemini(base64Pdf) {
     throw new Error('GEMINI_API_KEY is not set or was not expanded by the environment.');
   }
 
-  // Downgraded from gemini-2.0-flash → gemini-1.5-flash-8b.
+  // Downgraded from gemini-2.0-flash → gemini-1.5-flash.
   // New free-tier accounts in most regions have a literal quota of 0 for the
   // 2.0 model, while 1.5-flash-8b has a generous free quota that is almost
   // always open — this is the root cause of the "limit: 0" 429 responses.
-  const modelName = 'gemini-1.5-flash-8b';
+  const modelName = 'gemini-1.5-flash';
   console.log('[analyze-pdf] Using model:', modelName);
   console.log(`[analyze-pdf] Key prefix: ${apiKey.slice(0, 6)}...`);
 
@@ -77,7 +77,7 @@ async function callGemini(base64Pdf) {
   console.log("[STRICT DEBUG] Forcing API Version v1 via getGenerativeModel");
   const model = genAI.getGenerativeModel(
     {
-      model: "gemini-1.5-flash-8b",
+      model: "gemini-1.5-flash",
       generationConfig: {
         temperature:     0.05,  // Near-zero temperature for deterministic structured output
         maxOutputTokens: 2048,
