@@ -64,19 +64,17 @@ async function callGemini(base64Pdf) {
   );
 
  // ---------------------------------------------------------------------------
-  // Prompt engineering - Handles both English and visually reversed Hebrew text.
-  // Hebrew PDFs often store characters in reverse visual order, so the reversed
-  // forms below are what actually appears in the raw extracted text stream.
+  // Prompt engineering - Strict dictionary-based detection for English and Hebrew.
+  // Hebrew PDFs often store characters in reverse visual order, so each Hebrew
+  // phrase is listed alongside its visually reversed form for full coverage.
   // ---------------------------------------------------------------------------
-  const SYSTEM_PROMPT = `Analyze this document to identify required form fields (signatures, dates, names). The document may be in English or Hebrew.
+  const SYSTEM_PROMPT = `Analyze this document to determine which form fields are required. You are strictly looking for matches from the following dictionaries (checking both English and Hebrew, including reversed Hebrew characters due to PDF encoding).
 
-CRITICAL FOR HEBREW: The text is visually reversed.
+SIGNATURE Dictionary: 'signature', 'sign here', 'חתימה', 'חתימת לקוח', 'חתום כאן', 'תמיתח', 'חוקל תמיתח', 'נאכ םותח'.
+DATE Dictionary: 'date', 'תאריך', 'ךיראת'.
+NAME Dictionary: 'name', 'full name', 'שם', 'שם מלא', 'שם לקוח', 'מש', 'אלמ םש', 'חוקל םש'.
 
-To find 'Date' (תאריך), look for the string 'ךיראת'.
-
-To find 'Signature' (חתימה), look for the string 'תמיתח' or 'המיתח'.
-
-Identify these fields regardless of whether the text is logical or reversed. Return ONLY a valid JSON array.
+If you detect any of these strings, add the corresponding field type to your JSON array. Return ONLY a valid JSON array of objects. Do NOT calculate coordinates.
 Schema: [{"type": "signature" | "date" | "customText", "label": "Detected Field Name"}].`;
 
   console.log("[FINAL TEST] Calling Gemini v1beta with model: gemini-2.5-flash");
