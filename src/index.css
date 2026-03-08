@@ -1,4 +1,2 @@
-/* Global base styles — Tailwind CSS entry point */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Global styles entry point — intentionally minimal */
+/* All component styling uses App.css and Tailwind utility classes */
