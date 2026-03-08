@@ -2,15 +2,16 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const Login = () => {
+const SignUp = () => {
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm]   = useState('');
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
   const navigate = useNavigate();
-  const { login, currentUser } = useAuth();
+  const { signup, currentUser } = useAuth();
 
-  // If the user is already signed in, redirect immediately to the upload page
+  // Redirect already-authenticated users away from the registration page
   if (currentUser) {
     navigate('/', { replace: true });
     return null;
@@ -19,20 +20,26 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (password !== confirm) {
+      return setError('Passwords do not match.');
+    }
+    if (password.length < 6) {
+      return setError('Password must be at least 6 characters.');
+    }
+
     setLoading(true);
     try {
-      await login(email, password);
+      await signup(email, password);
       navigate('/');
     } catch (err) {
       // Map Firebase error codes to user-friendly messages
       const messages = {
-        'auth/user-not-found':    'No account found with this email.',
-        'auth/wrong-password':    'Incorrect password. Please try again.',
-        'auth/invalid-credential':'Incorrect email or password.',
-        'auth/invalid-email':     'Please enter a valid email address.',
-        'auth/too-many-requests': 'Too many failed attempts. Please try again later.',
+        'auth/email-already-in-use': 'An account with this email already exists.',
+        'auth/invalid-email':        'Please enter a valid email address.',
+        'auth/weak-password':        'Password must be at least 6 characters.',
       };
-      setError(messages[err.code] || 'Sign-in failed. Please try again.');
+      setError(messages[err.code] || 'Sign-up failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -51,10 +58,10 @@ const Login = () => {
             </svg>
           </div>
           <h1 className="text-3xl font-bold text-white tracking-tight">SignFlow</h1>
-          <p className="text-slate-400 mt-1.5 text-sm">Sign in to your account</p>
+          <p className="text-slate-400 mt-1.5 text-sm">Create your free account</p>
         </div>
 
-        {/* Login card */}
+        {/* Registration card */}
         <div className="bg-white rounded-2xl shadow-2xl p-8">
 
           {error && (
@@ -91,10 +98,27 @@ const Login = () => {
               <input
                 type="password"
                 required
-                autoComplete="current-password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="Min. 6 characters"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm text-gray-900
+                           placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500
+                           focus:border-transparent transition"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                Confirm Password
+              </label>
+              <input
+                type="password"
+                required
+                autoComplete="new-password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                placeholder="Re-enter your password"
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm text-gray-900
                            placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500
                            focus:border-transparent transition"
@@ -107,14 +131,14 @@ const Login = () => {
               className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-60
                          text-white font-semibold text-sm py-3 px-4 rounded-xl shadow-sm transition-colors"
             >
-              {loading ? 'Signing in…' : 'Sign In'}
+              {loading ? 'Creating account…' : 'Create Account'}
             </button>
           </form>
 
           <p className="mt-6 text-center text-sm text-gray-500">
-            Don&apos;t have an account?{' '}
-            <Link to="/signup" className="text-blue-600 font-semibold hover:text-blue-700 transition-colors">
-              Create one
+            Already have an account?{' '}
+            <Link to="/login" className="text-blue-600 font-semibold hover:text-blue-700 transition-colors">
+              Sign in
             </Link>
           </p>
         </div>
@@ -123,4 +147,4 @@ const Login = () => {
   );
 };
 
-export default Login;
+export default SignUp;

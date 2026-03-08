@@ -7,7 +7,7 @@ import SignaturePad from 'react-signature-canvas';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { getMarkerColor, getMarkerLabel, getMarkerKey, useWindowWidth } from '../utils/pdfHelpers';
-import { fetchDocument } from '../services/dbService';
+import { fetchDocument, updateDocumentStatus } from '../services/dbService';
 import { logAction } from '../utils/logger';
 
 // Set the worker source from a reliable CDN to ensure compatibility
@@ -54,6 +54,11 @@ const SignerView = () => {
         if (result) {
           setMarkers(result.markers);
         }
+
+        // Advance document status to 'opened' so the sender knows the signer viewed the document
+        await updateDocumentStatus(documentId, 'opened').catch((err) =>
+          console.warn('[status] Failed to mark document as opened:', err)
+        );
 
         // Fetch the PDF as a blob to avoid CORS issues with react-pdf
         const fileRef = ref(storage, `pdfs/${documentId}.pdf`);
@@ -136,6 +141,9 @@ const SignerView = () => {
 
       // Log the signing action
       await logAction('sign_doc', documentId, { signedPdfUrl: result.downloadUrl });
+
+      // Advance status to 'signed' and persist the URL of the completed PDF
+      await updateDocumentStatus(documentId, 'signed', { signedPdfUrl: result.downloadUrl });
 
       setSignedPdfUrl(result.downloadUrl);
       setIsCompleted(true);

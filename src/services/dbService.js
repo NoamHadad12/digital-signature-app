@@ -135,15 +135,20 @@ export const fetchDocument = async (documentId) => {
 
 // ---------------------------------------------------------------------------
 // getFilteredDocuments
-// Fetches documents based on clientId and createdAt date range.
+// Fetches ONLY documents belonging to the current user (strict multi-tenant).
+// The uid filter is mandatory — this is enforced both here and in Firestore rules.
+//
+// @param {string} uid        - The authenticated user's UID (currentUser.uid)
+// @param {string} startDate  - Optional ISO date string lower bound
+// @param {string} endDate    - Optional ISO date string upper bound
 // ---------------------------------------------------------------------------
-export const getFilteredDocuments = async (clientId, startDate, endDate) => {
-  const docsRef = collection(db, 'documents');
-  let constraints = [];
+export const getFilteredDocuments = async (uid, startDate, endDate) => {
+  if (!uid) return [];
 
-  if (clientId) {
-    constraints.push(where('clientId', '==', clientId));
-  }
+  const docsRef = collection(db, 'documents');
+
+  // Always enforce clientId == uid — privacy by design, no exceptions
+  const constraints = [where('clientId', '==', uid)];
 
   if (startDate) {
     constraints.push(where('createdAt', '>=', new Date(startDate).toISOString()));
@@ -155,14 +160,29 @@ export const getFilteredDocuments = async (clientId, startDate, endDate) => {
     constraints.push(where('createdAt', '<=', endDocDate.toISOString()));
   }
 
-  // To combine equality checks with range filters (like `>=` and `<=`), we might need a composite index on Firestore.
-  // The orderBy('createdAt') will automatically work if no equality checks break it.
   constraints.push(orderBy('createdAt', 'desc'));
 
   const q = query(docsRef, ...constraints);
-  
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+};
+
+// ---------------------------------------------------------------------------
+// updateDocumentStatus
+// Updates the lifecycle status of a document in Firestore.
+// Also accepts optional extra fields (e.g. signedPdfUrl) to merge in the same write.
+//
+// @param {string} documentId
+// @param {string} status       - 'draft' | 'sent' | 'opened' | 'signed'
+// @param {object} extraFields  - Optional additional fields to merge
+// ---------------------------------------------------------------------------
+export const updateDocumentStatus = async (documentId, status, extraFields = {}) => {
+  const documentRef = doc(db, 'documents', documentId);
+  await updateDoc(documentRef, {
+    status,
+    ...extraFields,
+    updatedAt: new Date().toISOString(),
+  });
 };
 
 // ---------------------------------------------------------------------------

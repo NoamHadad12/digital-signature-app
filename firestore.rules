@@ -3,23 +3,56 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Documents collection — one record per uploaded PDF.
+    // ── documents collection ──────────────────────────────────────────────
     match /documents/{docId} {
-      // Allow any user (including unauthenticated signers) to read a document
-      // if they know its unique ID (i.e. they received the signing link).
-      allow read: if true;
 
-      // Only authenticated users (admins) may create or update documents.
-      allow write: if request.auth != null;
+      // Anyone who knows the document ID (i.e. received the signing link) can
+      // fetch it. This is intentional \u2014 the opaque UUID acts as an access token.
+      allow get: if true;
 
-      // Markers sub-collection — field positions belonging to a document.
+      // Only authenticated users may list/query documents, and only their own
+      // (clientId must equal the caller's uid). Enforced server-side via Firestore
+      // rules so no client-side bypass is possible.
+      allow list: if request.auth != null
+                  && request.auth.uid == resource.data.clientId;
+
+      // Authenticated users may create a document only if they set clientId to
+      // their own uid. Prevents one user from creating documents on behalf of another.
+      allow create: if request.auth != null
+                    && request.resource.data.clientId == request.auth.uid;
+
+      // Two categories of update are allowed:
+      //   1. The document owner (clientId == uid) can update any field.
+      //   2. An unauthenticated signer can update ONLY the status lifecycle fields
+      //      (status, signedPdfUrl, updatedAt). No other field may be touched.
+      allow update: if
+        (request.auth != null && resource.data.clientId == request.auth.uid)
+        ||
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'signedPdfUrl', 'updatedAt']);
+
+      // Only the document owner may permanently delete a document.
+      allow delete: if request.auth != null
+                    && resource.data.clientId == request.auth.uid;
+
+      // ── markers sub-collection ──────────────────────────────────────────
       match /markers/{markerId} {
-        // Signers need to read the field positions in order to render the form.
+        // Signers (unauthenticated) need to read markers to render the signing form.
         allow read: if true;
 
-        // Only authenticated users may write marker data.
-        allow write: if request.auth != null;
+        // Only the document owner may write/modify marker positions.
+        allow write: if request.auth != null
+                     && get(/databases/$(database)/documents/documents/$(docId)).data.clientId
+                        == request.auth.uid;
       }
+    }
+
+    // ── logs collection ───────────────────────────────────────────────────
+    // Append-only audit trail. Any client may write a log entry (signers are
+    // unauthenticated), but only authenticated users may read the audit log.
+    match /logs/{logId} {
+      allow create: if true;
+      allow read:   if request.auth != null;
     }
   }
 }

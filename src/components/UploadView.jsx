@@ -9,6 +9,7 @@ import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { getMarkerColor, getMarkerLabel, useWindowWidth } from '../utils/pdfHelpers';
 import { logAction } from '../utils/logger';
+import { updateDocumentStatus } from '../services/dbService';
 
 // Set the worker source from a reliable CDN to ensure compatibility
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -28,9 +29,10 @@ const UploadView = () => {
   const { logout, currentUser } = useAuth();
 
   const [file, setFile] = useState(null);
-  const [clientId, setClientId] = useState('');
   const [fileUrl, setFileUrl] = useState(null);
   const [fileError, setFileError] = useState(''); // Validation error shown below the file input
+  // ID of the document just uploaded — used to update status to 'sent' on link copy
+  const [uploadedDocId, setUploadedDocId] = useState('');
   const [numPages, setNumPages] = useState(null);
   // Single source of truth for ALL fields on the document.
   // Each entry: { id, type, label?, page, nx, ny, nw, nh, confirmed: boolean }
@@ -80,6 +82,7 @@ const UploadView = () => {
     setFile(selectedFile);
     setGeneratedLink(''); // Reset link on new upload
     setIsCopied(false);   // Reset copied state on new upload
+    setUploadedDocId(''); // Reset tracked doc ID on new upload
     setFields([]);        // Discard all fields (confirmed and pending) from a previous file
     setAiError(null);
 
@@ -280,28 +283,20 @@ const UploadView = () => {
   // ---------------------------------------------------------------------------
   // saveDocumentToFirestore
   // Writes the confirmed document record to the `documents` Firestore collection.
-  //
-  // Schema written:
-  //   fileName  {string}  Original filename as selected by the admin
-  //   fileUrl   {string}  Firebase Storage download URL (not the storage path)
-  //   ownerId   {string}  Firebase Auth UID of the admin who uploaded the file
-  //   createdAt {string}  ISO-8601 timestamp of when the record was created
-  //   fields    {Array}   Flat array of confirmed field markers (Human-in-the-Loop
-  //                       approved). Each entry mirrors the marker schema:
-  //                       { index, type, page, nx, ny, nw, nh, label? }
-  //
-  // Design rationale: fields are stored as a flat array instead of a sub-collection
-  // because all fields are always read together (never paginated individually),
-  // so a single document read is more efficient than N sub-collection reads.
+  // clientId is always set to currentUser.uid — the user cannot override it.
+  // status is initialized to 'draft' and advances as the document lifecycle progresses.
   // ---------------------------------------------------------------------------
-  const saveDocumentToFirestore = async (fileId, fileName, fileUrl, confirmedFields, clientId) => {
+  const saveDocumentToFirestore = async (fileId, fileName, fileUrl, confirmedFields) => {
     const documentRef = doc(db, 'documents', fileId);
 
     await setDoc(documentRef, {
       fileName,
       fileUrl,
-      clientId,
+      // clientId is automatically bound to the authenticated user's UID — privacy by design
+      clientId:  currentUser.uid,
       ownerId:   currentUser.uid,
+      // Initial lifecycle status; advances to 'sent' → 'opened' → 'signed'
+      status:    'draft',
       createdAt: new Date().toISOString(),
       // Map fields to a clean schema; `label` is only included for customText fields
       fields: confirmedFields.map((field, index) => ({
@@ -316,7 +311,7 @@ const UploadView = () => {
       })),
     });
 
-    await logAction('create_doc', fileId, { fileName, clientId, ownerId: currentUser.uid });
+    await logAction('create_doc', fileId, { fileName, clientId: currentUser.uid, ownerId: currentUser.uid });
   };
 
   const handleUpload = async () => {
@@ -351,11 +346,13 @@ const UploadView = () => {
       const fileUrl = await getDownloadURL(storageRef);
 
       // Step 3 — save the full document record (including confirmed fields) to Firestore
-      await saveDocumentToFirestore(fileId, file.name, fileUrl, confirmedFields, clientId);
+      await saveDocumentToFirestore(fileId, file.name, fileUrl, confirmedFields);
 
       // Step 4 — generate and display the shareable signing link
       const link = `${window.location.origin}/sign/${fileId}`;
       setGeneratedLink(link);
+      // Store the doc ID so copyToClipboard can update the status to 'sent'
+      setUploadedDocId(fileId);
     } catch (error) {
       // Log EXACT Firebase error clearly into the console
       console.error("=== FIREBASE UPLOAD ERROR ===");
@@ -372,7 +369,13 @@ const UploadView = () => {
   const copyToClipboard = () => {
     navigator.clipboard.writeText(generatedLink).then(() => {
       setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000); // Reset after 2 seconds
+      setTimeout(() => setIsCopied(false), 2000);
+      // Advance status to 'sent' the first time the owner copies the link
+      if (uploadedDocId) {
+        updateDocumentStatus(uploadedDocId, 'sent').catch((err) =>
+          console.warn('[status] Failed to mark document as sent:', err)
+        );
+      }
     }, (err) => {
       console.error('Failed to copy link: ', err);
     });
@@ -382,6 +385,12 @@ const UploadView = () => {
     const message = `You've been sent a document to sign: ${generatedLink}`;
     const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+    // Also advance status to 'sent' when sharing via WhatsApp
+    if (uploadedDocId) {
+      updateDocumentStatus(uploadedDocId, 'sent').catch((err) =>
+        console.warn('[status] Failed to mark document as sent:', err)
+      );
+    }
   };
 
   return (
@@ -411,14 +420,6 @@ const UploadView = () => {
           accept="application/pdf" 
           onChange={handleFileChange} 
           className="file-input"
-        />
-        <input 
-          type="text" 
-          placeholder="Client ID (Optional)"
-          value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
-          className="client-id-input mt-4 w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-          style={{ marginTop: '1rem' }}
         />
       </div>
 

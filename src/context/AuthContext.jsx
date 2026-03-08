@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import {
+  onAuthStateChanged,
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+} from 'firebase/auth';
 import { auth } from '../firebase';
-
-// The only email address permitted to access the admin (upload) side of the app.
-const ALLOWED_EMAIL = 'noam.hadad23@gmail.com';
 
 // Create the context object — components consume this via useAuth()
 const AuthContext = createContext(null);
@@ -12,7 +14,7 @@ const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-  // currentUser: the Firebase user object, or null if not signed in
+  // currentUser: the Firebase user object (with uid), or null if not signed in
   // loading: true while Firebase resolves the initial auth state on page load
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -29,13 +31,18 @@ export const AuthProvider = ({ children }) => {
     return unsubscribe;
   }, []);
 
+  // Sign in with email and password
+  const login = (email, password) =>
+    signInWithEmailAndPassword(auth, email, password);
+
+  // Register a new account with email and password
+  const signup = (email, password) =>
+    createUserWithEmailAndPassword(auth, email, password);
+
   // Sign the current user out of Firebase
   const logout = () => signOut(auth);
 
-  // isAllowed: true only when the signed-in email matches the permitted address
-  const isAllowed = currentUser?.email === ALLOWED_EMAIL;
-
-  const value = { currentUser, isAllowed, logout, loading };
+  const value = { currentUser, login, signup, logout, loading };
 
   // Render nothing until Firebase resolves the initial auth state.
   // This prevents a flash of the login page when the user refreshes while logged in.

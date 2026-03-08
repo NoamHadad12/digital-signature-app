@@ -11,8 +11,10 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  ExternalLink,
 } from 'lucide-react';
 import { getFilteredDocuments, deleteDocument, editDocumentName } from '../services/dbService';
+import { useAuth } from '../context/AuthContext';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -52,18 +54,18 @@ function Toast({ toast }) {
   );
 }
 
-/** Badge shown in the Client ID column */
-function ClientBadge({ clientId }) {
-  if (!clientId) {
-    return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
-        N/A
-      </span>
-    );
-  }
+/** Status lifecycle badge with color-coded styling */
+function StatusBadge({ status }) {
+  const config = {
+    draft:  { label: 'Draft',  cls: 'bg-gray-100 text-gray-600 ring-gray-200' },
+    sent:   { label: 'Sent',   cls: 'bg-blue-100 text-blue-700 ring-blue-200' },
+    opened: { label: 'Opened', cls: 'bg-amber-100 text-amber-700 ring-amber-200' },
+    signed: { label: 'Signed', cls: 'bg-emerald-100 text-emerald-700 ring-emerald-200' },
+  };
+  const { label, cls } = config[status] || config.draft;
   return (
-    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-      {clientId}
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${cls}`}>
+      {label}
     </span>
   );
 }
@@ -73,17 +75,19 @@ function ClientBadge({ clientId }) {
 export default function AdminDashboard() {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading]     = useState(false);
-  const [clientIdFilter, setClientIdFilter] = useState('');
-  const [startDate, setStartDate]           = useState('');
-  const [endDate, setEndDate]               = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate]     = useState('');
+
+  // Pull the authenticated user so we can scope all Firestore queries to their uid
+  const { currentUser, logout } = useAuth();
 
   // Toast state
   const [toast, setToast] = useState(null);
 
   // Edit-modal state
-  const [isEditing,    setIsEditing]    = useState(false);
-  const [editDocId,    setEditDocId]    = useState(null);
-  const [newFileName,  setNewFileName]  = useState('');
+  const [isEditing,   setIsEditing]   = useState(false);
+  const [editDocId,   setEditDocId]   = useState(null);
+  const [newFileName, setNewFileName] = useState('');
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -95,7 +99,8 @@ export default function AdminDashboard() {
   const fetchDocuments = async () => {
     setLoading(true);
     try {
-      const results = await getFilteredDocuments(clientIdFilter, startDate, endDate);
+      // Always pass the current user's UID — strict tenant isolation
+      const results = await getFilteredDocuments(currentUser?.uid, startDate, endDate);
       setDocuments(results);
     } catch (err) {
       console.error(err);
@@ -118,12 +123,11 @@ export default function AdminDashboard() {
   };
 
   const clearFilters = () => {
-    setClientIdFilter('');
     setStartDate('');
     setEndDate('');
-    // Re-fetch with cleared values via state reset — call directly with empty args
+    // Re-fetch with empty date range but keep the uid filter
     setLoading(true);
-    getFilteredDocuments('', '', '')
+    getFilteredDocuments(currentUser?.uid, '', '')
       .then(setDocuments)
       .catch((err) => { console.error(err); showToast('Error fetching documents', 'error'); })
       .finally(() => setLoading(false));
@@ -182,8 +186,16 @@ export default function AdminDashboard() {
           <span className="text-lg font-semibold text-gray-900 tracking-tight">SignFlow</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-400 hidden sm:block truncate max-w-[200px]">{currentUser?.email}</span>
           <span className="text-xs font-medium text-gray-400 uppercase tracking-widest">Admin Panel</span>
+          <button
+            onClick={logout}
+            className="text-xs font-medium text-gray-500 hover:text-red-600 border border-gray-300 hover:border-red-300
+                       px-3 py-1.5 rounded-lg transition-colors"
+          >
+            Sign Out
+          </button>
         </div>
       </header>
 
@@ -205,23 +217,7 @@ export default function AdminDashboard() {
             <h2 className="text-base font-semibold text-gray-800">Filters</h2>
           </div>
 
-          <form onSubmit={handleFilter} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-
-            {/* Client ID input with search icon */}
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Client ID</label>
-              <div className="relative">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                <input
-                  type="text"
-                  value={clientIdFilter}
-                  onChange={(e) => setClientIdFilter(e.target.value)}
-                  placeholder="e.g. CLI-123"
-                  className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-800 placeholder-gray-400
-                             focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                />
-              </div>
-            </div>
+          <form onSubmit={handleFilter} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
             {/* Start Date with calendar icon */}
             <div className="flex flex-col gap-1">
@@ -301,7 +297,7 @@ export default function AdminDashboard() {
                     File Name
                   </th>
                   <th className="sticky top-0 py-3 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                    Client ID
+                    Status
                   </th>
                   <th className="sticky top-0 py-3 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
                     Created At
@@ -359,9 +355,9 @@ export default function AdminDashboard() {
                       </div>
                     </td>
 
-                    {/* Client ID badge */}
+                    {/* Lifecycle status badge */}
                     <td className="py-3.5 px-6">
-                      <ClientBadge clientId={docObj.clientId} />
+                      <StatusBadge status={docObj.status} />
                     </td>
 
                     {/* Formatted date */}
@@ -372,6 +368,20 @@ export default function AdminDashboard() {
                     {/* Icon action buttons */}
                     <td className="py-3.5 px-6">
                       <div className="flex items-center justify-end gap-1">
+                        {/* View signed PDF button — only shown when document is fully signed */}
+                        {docObj.status === 'signed' && docObj.signedPdfUrl && (
+                          <a
+                            href={docObj.signedPdfUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="View signed PDF"
+                            className="p-2 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50
+                                       transition-colors duration-150"
+                          >
+                            <ExternalLink size={16} />
+                          </a>
+                        )}
+
                         {/* Edit button */}
                         <button
                           onClick={() => openEditModal(docObj)}
