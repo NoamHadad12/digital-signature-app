@@ -1,6 +1,8 @@
 ﻿import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { db } from '../firebase';
+import { doc, setDoc } from 'firebase/firestore';
 import { Shield } from 'lucide-react';
 
 // Firebase error code -> Hebrew user-friendly message mapping
@@ -11,14 +13,22 @@ const AUTH_ERRORS = {
   'auth/network-request-failed': 'שגיאת רשת. בדוק את החיבור לאינטרנט.',
 };
 
+const INPUT_CLS = `w-full px-4 py-3 border border-gray-300 rounded-xl text-sm text-gray-900
+                  placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500
+                  focus:border-transparent transition`;
+
+const LABEL_CLS = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5';
+
 const SignUp = () => {
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm]   = useState('');
-  const [error, setError]       = useState('');
-  const [loading, setLoading]   = useState(false);
-  const navigate                = useNavigate();
-  const { signup, currentUser } = useAuth();
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName]   = useState('');
+  const [email, setEmail]         = useState('');
+  const [password, setPassword]   = useState('');
+  const [confirm, setConfirm]     = useState('');
+  const [error, setError]         = useState('');
+  const [loading, setLoading]     = useState(false);
+  const navigate                  = useNavigate();
+  const { signup, currentUser }   = useAuth();
 
   // Redirect authenticated users away from the registration page
   if (currentUser) {
@@ -30,6 +40,9 @@ const SignUp = () => {
     e.preventDefault();
     setError('');
 
+    if (!firstName.trim() || !lastName.trim()) {
+      return setError('אנא הזן שם פרטי ושם משפחה.');
+    }
     if (password !== confirm) {
       return setError('הסיסמאות אינן תואמות.');
     }
@@ -39,7 +52,14 @@ const SignUp = () => {
 
     setLoading(true);
     try {
-      await signup(email, password);
+      const cred = await signup(email, password);
+      // Persist the user's display name to Firestore immediately after account creation
+      await setDoc(doc(db, 'users', cred.user.uid), {
+        firstName: firstName.trim(),
+        lastName:  lastName.trim(),
+        email,
+        createdAt: new Date().toISOString(),
+      });
       navigate('/');
     } catch (err) {
       setError(AUTH_ERRORS[err.code] || 'ההרשמה נכשלה. אנא נסה שנית.');
@@ -71,10 +91,37 @@ const SignUp = () => {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
+
+          {/* First Name + Last Name side by side */}
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className={LABEL_CLS}>First Name</label>
+              <input
+                type="text"
+                required
+                autoComplete="given-name"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                placeholder="John"
+                className={INPUT_CLS}
+              />
+            </div>
+            <div className="flex-1">
+              <label className={LABEL_CLS}>Last Name</label>
+              <input
+                type="text"
+                required
+                autoComplete="family-name"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="Doe"
+                className={INPUT_CLS}
+              />
+            </div>
+          </div>
+
           <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-              Email Address
-            </label>
+            <label className={LABEL_CLS}>Email Address</label>
             <input
               type="email"
               required
@@ -82,16 +129,12 @@ const SignUp = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@company.com"
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm text-gray-900
-                         placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500
-                         focus:border-transparent transition"
+              className={INPUT_CLS}
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-              Password
-            </label>
+            <label className={LABEL_CLS}>Password</label>
             <input
               type="password"
               required
@@ -99,16 +142,12 @@ const SignUp = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Min. 6 characters"
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm text-gray-900
-                         placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500
-                         focus:border-transparent transition"
+              className={INPUT_CLS}
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-              Confirm Password
-            </label>
+            <label className={LABEL_CLS}>Confirm Password</label>
             <input
               type="password"
               required
@@ -116,9 +155,7 @@ const SignUp = () => {
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               placeholder="Re-enter your password"
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm text-gray-900
-                         placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500
-                         focus:border-transparent transition"
+              className={INPUT_CLS}
             />
           </div>
 

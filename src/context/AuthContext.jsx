@@ -5,7 +5,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
 } from 'firebase/auth';
-import { auth } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 
 // Create the context object — components consume this via useAuth()
 const AuthContext = createContext(null);
@@ -15,15 +16,32 @@ export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
   // currentUser: the Firebase user object (with uid), or null if not signed in
+  // userProfile: firstName + lastName fetched from the users Firestore collection
   // loading: true while Firebase resolves the initial auth state on page load
   const [currentUser, setCurrentUser] = useState(null);
+  const [userProfile, setUserProfile] = useState({ firstName: '', lastName: '' });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // onAuthStateChanged fires immediately with the current user, then again
     // every time the user signs in or out. Returns an unsubscribe function.
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
+      if (user) {
+        try {
+          const snap = await getDoc(doc(db, 'users', user.uid));
+          if (snap.exists()) {
+            const { firstName = '', lastName = '' } = snap.data();
+            setUserProfile({ firstName, lastName });
+          } else {
+            setUserProfile({ firstName: '', lastName: '' });
+          }
+        } catch {
+          setUserProfile({ firstName: '', lastName: '' });
+        }
+      } else {
+        setUserProfile({ firstName: '', lastName: '' });
+      }
       setLoading(false);
     });
 
@@ -42,7 +60,7 @@ export const AuthProvider = ({ children }) => {
   // Sign the current user out of Firebase
   const logout = () => signOut(auth);
 
-  const value = { currentUser, login, signup, logout, loading };
+  const value = { currentUser, userProfile, login, signup, logout, loading };
 
   // Render nothing until Firebase resolves the initial auth state.
   // This prevents a flash of the login page when the user refreshes while logged in.

@@ -81,7 +81,7 @@ export default function AdminDashboard() {
   const [endDate, setEndDate]     = useState('');
 
   // Pull the authenticated user so we can scope all Firestore queries to their uid
-  const { currentUser, logout } = useAuth();
+  const { currentUser, logout, userProfile } = useAuth();
 
   // Toast state
   const [toast, setToast] = useState(null);
@@ -199,7 +199,11 @@ export default function AdminDashboard() {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400 hidden sm:block truncate max-w-[200px] mr-1">{currentUser?.email}</span>
+          {userProfile.firstName && (
+            <span className="text-sm font-medium text-gray-700 hidden sm:block ml-1" dir="rtl">
+              שלום {userProfile.firstName} {userProfile.lastName}
+            </span>
+          )}
           <button
             onClick={() => (window.location.href = '/')}
             className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-blue-600 border border-gray-300

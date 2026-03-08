@@ -38,7 +38,7 @@ const FIELD_TYPES = [
 
 const UploadView = () => {
   // Expose auth helpers and the current user object from the auth context
-  const { logout, currentUser } = useAuth();
+  const { logout, currentUser, userProfile } = useAuth();
 
   const [file, setFile] = useState(null);
   const [fileUrl, setFileUrl] = useState(null);
@@ -419,6 +419,11 @@ const UploadView = () => {
           <span className="text-lg font-bold text-gray-900 tracking-tight">SignFlow</span>
         </div>
         <div className="flex items-center gap-2">
+          {userProfile.firstName && (
+            <span className="text-sm font-medium text-gray-700 hidden sm:block ml-1" dir="rtl">
+              שלום {userProfile.firstName} {userProfile.lastName}
+            </span>
+          )}
           <button
             onClick={() => window.location.href = '/admin'}
             className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-blue-600 border border-gray-300
