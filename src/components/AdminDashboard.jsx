@@ -192,7 +192,7 @@ export default function AdminDashboard() {
       <header className="flex items-center justify-end gap-4 p-4 absolute top-0 right-0 w-full z-30">
         {userProfile?.firstName && (
           <span className="text-gray-600 font-medium text-sm" dir="rtl">
-            {userProfile?.firstName ? `שלום ${userProfile.firstName}` : ''}
+            {userProfile?.firstName ? `Hello ${userProfile.firstName}` : ''}
           </span>
         )}
         <button

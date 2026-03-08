@@ -385,7 +385,7 @@ const UploadView = () => {
       {/* Header controls — fixed to the top-right corner of the upload card */}
       <div style={{ position: 'absolute', top: '16px', right: '16px', display: 'flex', alignItems: 'center', gap: '15px' }}>
         <span style={{ color: '#4b5563', fontWeight: 500, fontSize: '0.9rem' }} dir="rtl">
-          {userProfile?.firstName ? `שלום ${userProfile.firstName}` : ''}
+          {userProfile?.firstName ? `Hello ${userProfile.firstName}` : ''}
         </span>
         <button
           onClick={() => navigate('/admin')}
