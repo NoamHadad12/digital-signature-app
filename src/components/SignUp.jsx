@@ -13,9 +13,7 @@ const AUTH_ERRORS = {
   'auth/network-request-failed': 'שגיאת רשת. בדוק את החיבור לאינטרנט.',
 };
 
-const INPUT_CLS = `w-full px-4 py-3 border border-gray-300 rounded-xl text-sm text-gray-900
-                  placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500
-                  focus:border-transparent transition`;
+const INPUT_CLS = 'w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none';
 
 const LABEL_CLS = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5';
 
@@ -69,8 +67,8 @@ const SignUp = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50 font-sans px-4">
-      <div className="bg-white p-10 rounded-3xl shadow-xl w-full max-w-md border border-gray-100">
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+      <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-slate-100">
 
         {/* Brand header with Lucide icon */}
         <div className="text-center mb-8">
@@ -79,7 +77,7 @@ const SignUp = () => {
               <Shield className="w-full h-full" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">SignFlow</h1>
+          <h1 className="text-blue-600 font-bold text-3xl text-center mb-6">SignFlow</h1>
           <p className="text-gray-500 mt-1 text-sm">Create your account</p>
         </div>
 
@@ -162,8 +160,7 @@ const SignUp = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-60
-                       text-white font-semibold text-sm py-3 px-4 rounded-xl shadow-sm transition-colors"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-all"
           >
             {loading ? 'Creating account...' : 'Create Account'}
           </button>

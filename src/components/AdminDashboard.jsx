@@ -186,50 +186,31 @@ export default function AdminDashboard() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans">
+    <div className="min-h-screen bg-slate-50 font-sans">
 
       {/* Top Navigation Bar - sticky white header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-3.5 flex items-center justify-between shadow-sm sticky top-0 z-30">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shrink-0">
-            <div className="w-4 h-4 text-white">
-              <FileText className="w-full h-full" />
-            </div>
-          </div>
-          <span className="text-lg font-bold text-gray-900 tracking-tight">SignFlow</span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {userProfile.firstName && (
-            <span className="text-sm font-medium text-gray-700 hidden sm:block ml-1" dir="rtl">
-              שלום {userProfile.firstName} {userProfile.lastName}
-            </span>
-          )}
-          <button
-            onClick={() => (window.location.href = '/')}
-            className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-blue-600 border border-gray-300
-                       hover:border-blue-400 px-3 py-1.5 rounded-lg transition-colors"
-          >
-            <div className="w-3.5 h-3.5">
-              <UploadCloud className="w-full h-full" />
-            </div>
-            Upload Document
-          </button>
-          <button
-            onClick={logout}
-            className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-red-600 border border-gray-300 hover:border-red-300
-                       px-3 py-1.5 rounded-lg transition-colors"
-          >
-            <div className="w-3.5 h-3.5">
-              <LogOut className="w-full h-full" />
-            </div>
-            Sign Out
-          </button>
-        </div>
+      <header className="flex items-center justify-end gap-4 p-4 absolute top-0 right-0 w-full z-30">
+        {userProfile?.firstName && (
+          <span className="text-gray-600 font-medium text-sm" dir="rtl">
+            שלום {userProfile.firstName} {userProfile.lastName}
+          </span>
+        )}
+        <button
+          onClick={() => (window.location.href = '/')}
+          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-all text-sm"
+        >
+          Upload Document
+        </button>
+        <button
+          onClick={logout}
+          className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-all text-sm"
+        >
+          Sign Out
+        </button>
       </header>
 
       {/* Page Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <main className="max-w-6xl mx-auto w-full bg-white rounded-2xl shadow-xl p-8 mt-8 border border-slate-100 relative top-16">
 
         {/* Page Header */}
         <div className="mb-8">
@@ -246,44 +227,41 @@ export default function AdminDashboard() {
             <h2 className="text-base font-semibold text-gray-800">Filters</h2>
           </div>
 
-          <form onSubmit={handleFilter} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <form onSubmit={handleFilter} className="flex flex-col sm:flex-row items-end gap-4">
 
             {/* Start Date with calendar icon */}
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Start Date</label>
+            <div className="flex flex-col gap-1 w-full sm:w-1/3">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Start Date</label>
               <div className="relative">
                 <Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                 <input
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-800
-                             focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  className="w-full pl-9 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm text-gray-800"
                 />
               </div>
             </div>
 
             {/* End Date with calendar icon */}
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">End Date</label>
+            <div className="flex flex-col gap-1 w-full sm:w-1/3">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">End Date</label>
               <div className="relative">
                 <Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-800
-                             focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  className="w-full pl-9 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm text-gray-800"
                 />
               </div>
             </div>
 
             {/* Action buttons aligned to the bottom of the column */}
-            <div className="flex items-end gap-2">
+            <div className="flex items-center gap-2 w-full sm:w-1/3">
               <button
                 type="submit"
-                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800
-                           text-white text-sm font-semibold px-4 py-2.5 rounded-lg shadow-sm transition-colors"
+                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-all text-sm"
               >
                 <Search size={15} />
                 Search
@@ -291,8 +269,7 @@ export default function AdminDashboard() {
               <button
                 type="button"
                 onClick={clearFilters}
-                className="flex items-center justify-center gap-1.5 border border-gray-300 hover:border-gray-400
-                           text-gray-600 hover:text-gray-800 text-sm font-medium px-3 py-2.5 rounded-lg transition-colors"
+                className="flex items-center justify-center gap-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-all text-sm"
                 title="Clear all filters"
               >
                 <X size={15} />
@@ -317,32 +294,32 @@ export default function AdminDashboard() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-full text-left">
+            <table className="w-full text-left border-collapse">
 
               {/* Sticky table header */}
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="sticky top-0 py-3 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+              <thead className="bg-slate-50">
+                <tr className="border-b border-slate-100">
+                  <th className="sticky top-0 p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
                     File Name
                   </th>
-                  <th className="sticky top-0 py-3 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                  <th className="sticky top-0 p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
                     Status
                   </th>
-                  <th className="sticky top-0 py-3 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                  <th className="sticky top-0 p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
                     Created At
                   </th>
-                  <th className="sticky top-0 py-3 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right whitespace-nowrap">
+                  <th className="sticky top-0 p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right whitespace-nowrap">
                     Actions
                   </th>
                 </tr>
               </thead>
 
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="bg-white">
 
                 {/* Loading state */}
                 {loading && (
                   <tr>
-                    <td colSpan="4" className="py-16 text-center">
+                    <td colSpan="4" className="p-4 text-center border-b border-slate-100">
                       <div className="flex flex-col items-center gap-3 text-gray-400">
                         <Loader2 size={28} className="animate-spin text-blue-500" />
                         <span className="text-sm">Loading documents…</span>
@@ -354,7 +331,7 @@ export default function AdminDashboard() {
                 {/* Empty state */}
                 {!loading && documents.length === 0 && (
                   <tr>
-                    <td colSpan="4" className="py-20 text-center">
+                    <td colSpan="4" className="p-4 text-center border-b border-slate-100">
                       <div className="flex flex-col items-center gap-3 text-gray-400">
                         <div className="bg-gray-100 p-4 rounded-full">
                           <FileText size={28} className="text-gray-400" />
@@ -370,10 +347,10 @@ export default function AdminDashboard() {
                 {!loading && documents.map((docObj) => (
                   <tr
                     key={docObj.id}
-                    className="group hover:bg-blue-50/50 transition-colors duration-100"
+                    className="group hover:bg-blue-50/50 transition-colors duration-100 border-b border-slate-100"
                   >
                     {/* File Name with document icon */}
-                    <td className="py-3.5 px-6">
+                    <td className="p-4">
                       <div className="flex items-center gap-3">
                         <div className="bg-blue-50 p-1.5 rounded-md shrink-0">
                           <FileText size={14} className="text-blue-500" />
@@ -397,17 +374,17 @@ export default function AdminDashboard() {
                     </td>
 
                     {/* Lifecycle status badge */}
-                    <td className="py-3.5 px-6">
+                    <td className="p-4">
                       <StatusBadge status={docObj.status} />
                     </td>
 
                     {/* Formatted date */}
-                    <td className="py-3.5 px-6 text-sm text-gray-500 whitespace-nowrap">
+                    <td className="p-4 text-sm text-gray-500 whitespace-nowrap">
                       {formatDate(docObj.createdAt)}
                     </td>
 
                     {/* Icon action buttons */}
-                    <td className="py-3.5 px-6">
+                    <td className="p-4">
                       <div className="flex items-center justify-end gap-1">
 
                         {((docObj.status || '').toLowerCase() === 'signed' && docObj.signedPdfUrl) ? (
