@@ -24,12 +24,12 @@ service cloud.firestore {
       // Two categories of update are allowed:
       //   1. The document owner (clientId == uid) can update any field.
       //   2. An unauthenticated signer can update ONLY the status lifecycle fields
-      //      (status, signedPdfUrl, updatedAt). No other field may be touched.
+      //      (status, signedPdfUrl, signedAt). No other field may be touched.
       allow update: if
         (request.auth != null && resource.data.clientId == request.auth.uid)
         ||
         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'signedPdfUrl', 'updatedAt']);
+          .hasOnly(['status', 'signedPdfUrl', 'signedAt']);
 
       // Only the document owner may permanently delete a document.
       allow delete: if request.auth != null

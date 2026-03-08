@@ -58,13 +58,14 @@ function Toast({ toast }) {
 
 /** Status lifecycle badge with color-coded styling */
 function StatusBadge({ status }) {
+  const normalizedStatus = (status || 'draft').toLowerCase();
   const config = {
     draft:  { label: 'Draft',  cls: 'bg-gray-100 text-gray-600 ring-gray-200' },
     sent:   { label: 'Sent',   cls: 'bg-blue-100 text-blue-700 ring-blue-200' },
     opened: { label: 'Opened', cls: 'bg-amber-100 text-amber-700 ring-amber-200' },
     signed: { label: 'Signed', cls: 'bg-emerald-100 text-emerald-700 ring-emerald-200' },
   };
-  const { label, cls } = config[status] || config.draft;
+  const { label, cls } = config[normalizedStatus] || config.draft;
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${cls}`}>
       {label}
@@ -377,9 +378,21 @@ export default function AdminDashboard() {
                         <div className="bg-blue-50 p-1.5 rounded-md shrink-0">
                           <FileText size={14} className="text-blue-500" />
                         </div>
-                        <span className="text-sm font-medium text-gray-800 truncate max-w-xs">
-                          {docObj.fileName}
-                        </span>
+                        {docObj.signedPdfUrl ? (
+                          <a 
+                            href={docObj.signedPdfUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline truncate max-w-xs cursor-pointer"
+                            title="Download Signed PDF"
+                          >
+                            {docObj.fileName}
+                          </a>
+                        ) : (
+                          <span className="text-sm font-medium text-gray-800 truncate max-w-xs">
+                            {docObj.fileName}
+                          </span>
+                        )}
                       </div>
                     </td>
 
@@ -410,7 +423,7 @@ export default function AdminDashboard() {
                         </button>
 
                         {/* View signed PDF — only shown when document is fully signed */}
-                        {docObj.status === 'signed' && docObj.signedPdfUrl && (
+                        {((docObj.status || '').toLowerCase() === 'signed' || docObj.signedPdfUrl) && docObj.signedPdfUrl && (
                           <a
                             href={docObj.signedPdfUrl}
                             target="_blank"
