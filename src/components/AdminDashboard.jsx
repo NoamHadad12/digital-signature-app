@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  ArrowLeft,
   Search,
   Calendar,
   SlidersHorizontal,
@@ -12,7 +11,6 @@ import {
   XCircle,
   Loader2,
   ExternalLink,
-  Copy,
   Link2,
 } from 'lucide-react';
 import { getFilteredDocuments, deleteDocument, editDocumentName } from '../services/dbService';
@@ -189,21 +187,19 @@ export default function AdminDashboard() {
 
       {/* ── Top Navigation Bar ─────────────────────────────────────────── */}
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => (window.location.href = '/')}
-            className="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-blue-600 transition-colors"
-          >
-            <ArrowLeft size={16} />
-            Back to Upload
-          </button>
-          <span className="h-5 border-l border-gray-300" />
+        <div className="flex items-center gap-2">
           <span className="text-lg font-semibold text-gray-900 tracking-tight">SignFlow</span>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-400 hidden sm:block truncate max-w-[200px]">{currentUser?.email}</span>
-          <span className="text-xs font-medium text-gray-400 uppercase tracking-widest">Admin Panel</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400 hidden sm:block truncate max-w-[200px] mr-1">{currentUser?.email}</span>
+          <button
+            onClick={() => (window.location.href = '/')}
+            className="text-xs font-medium text-gray-600 hover:text-blue-600 border border-gray-300
+                       hover:border-blue-400 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            Upload View
+          </button>
           <button
             onClick={logout}
             className="text-xs font-medium text-gray-500 hover:text-red-600 border border-gray-300 hover:border-red-300

@@ -970,9 +970,9 @@ const UploadView = () => {
           </div>
         </div>
       )}
-      </div>{/* closes .upload-view */}
-      </div>{/* closes max-w-3xl wrapper */}
-    </div>{/* closes min-h-screen */}
+      </div>
+      </div>
+    </div>
   );
 };
 
