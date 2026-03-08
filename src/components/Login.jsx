@@ -1,15 +1,16 @@
 ﻿import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { FileText } from 'lucide-react';
 
-// Firebase error code -> user-friendly message mapping
+// Firebase error code -> Hebrew user-friendly message mapping
 const AUTH_ERRORS = {
-  'auth/user-not-found':         'No account found with this email.',
-  'auth/wrong-password':         'Incorrect password. Please try again.',
-  'auth/invalid-credential':     'Incorrect email or password.',
-  'auth/invalid-email':          'Please enter a valid email address.',
-  'auth/too-many-requests':      'Too many failed attempts. Try again later.',
-  'auth/network-request-failed': 'Network error. Check your connection.',
+  'auth/user-not-found':         'לא נמצא חשבון עם כתובת מייל זו.',
+  'auth/wrong-password':         'סיסמה שגויה. אנא נסה שנית.',
+  'auth/invalid-credential':     'כתובת מייל או סיסמה שגויים.',
+  'auth/invalid-email':          'אנא הזן כתובת מייל תקינה.',
+  'auth/too-many-requests':      'יותר מדי ניסיונות כושלים. אנא נסה שוב מאוחר יותר.',
+  'auth/network-request-failed': 'שגיאת רשת. בדוק את החיבור לאינטרנט.',
 };
 
 const Login = () => {
@@ -34,38 +35,37 @@ const Login = () => {
       await login(email, password);
       navigate('/');
     } catch (err) {
-      setError(AUTH_ERRORS[err.code] || 'Sign-in failed. Please try again.');
+      setError(AUTH_ERRORS[err.code] || 'הכניסה נכשלה. אנא נסה שנית.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-100 font-sans">
-      <div className="bg-white p-10 rounded-3xl shadow-2xl w-full max-w-md border border-gray-100">
+    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50 font-sans px-4">
+      <div className="bg-white p-10 rounded-3xl shadow-xl w-full max-w-md border border-gray-100">
 
-        {/* Brand header - emoji icon is safely constrained inside a fixed-size box */}
+        {/* Brand header with Lucide icon */}
         <div className="text-center mb-8">
-          <div style={{ width: '48px', height: '48px', margin: '0 auto 12px',
-                        background: '#2563eb', borderRadius: '12px',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: '24px' }}>
-            <span role="img" aria-label="document">📄</span>
+          <div className="w-12 h-12 flex items-center justify-center bg-blue-100 rounded-2xl mx-auto mb-4">
+            <div className="w-6 h-6 text-blue-600">
+              <FileText className="w-full h-full" />
+            </div>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">SignFlow</h1>
           <p className="text-gray-500 mt-1 text-sm">Sign in to your account</p>
         </div>
 
-        {/* Error banner */}
+        {/* Error banner - RTL for Hebrew messages */}
         {error && (
-          <div className="bg-red-100 text-red-700 p-3 rounded-xl mb-6 text-center text-sm">
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-6 text-sm text-right" dir="rtl">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
               Email Address
             </label>
             <input
@@ -82,7 +82,7 @@ const Login = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
               Password
             </label>
             <input
