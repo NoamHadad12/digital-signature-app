@@ -410,30 +410,27 @@ export default function AdminDashboard() {
                     <td className="py-3.5 px-6">
                       <div className="flex items-center justify-end gap-1">
 
-                        {/* Copy signing link — always available so the sender can reshare */}
-                        <button
-                          onClick={() => handleCopyLink(docObj.id)}
-                          title="Copy signing link"
-                          className={`p-2 rounded-lg transition-colors duration-150
-                            ${copiedId === docObj.id
-                              ? 'text-emerald-600 bg-emerald-50'
-                              : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
-                        >
-                          {copiedId === docObj.id ? <CheckCircle2 size={16} /> : <Link2 size={16} />}
-                        </button>
-
-                        {/* View signed PDF — only shown when document is fully signed */}
-                        {((docObj.status || '').toLowerCase() === 'signed' || docObj.signedPdfUrl) && docObj.signedPdfUrl && (
+                        {((docObj.status || '').toLowerCase() === 'signed' && docObj.signedPdfUrl) ? (
                           <a
                             href={docObj.signedPdfUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             title="View signed PDF"
-                            className="p-2 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50
-                                       transition-colors duration-150"
+                            className="p-2 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors duration-150 flex items-center justify-center"
                           >
                             <ExternalLink size={16} />
                           </a>
+                        ) : (
+                          <button
+                            onClick={() => handleCopyLink(docObj.id)}
+                            title="Copy signing link"
+                            className={`p-2 rounded-lg transition-colors duration-150 flex items-center justify-center
+                              ${copiedId === docObj.id
+                                ? 'text-emerald-600 bg-emerald-50'
+                                : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                          >
+                            {copiedId === docObj.id ? <CheckCircle2 size={16} /> : <Link2 size={16} />}
+                          </button>
                         )}
 
                         {/* Rename document */}
