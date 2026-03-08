@@ -5,6 +5,7 @@ import UploadView from './components/UploadView';
 import SignerView from './components/SignerView';
 import Login from './components/Login';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminDashboard from './components/AdminDashboard';
 // AuthProvider must wrap the entire app so every component can read auth state
 import { AuthProvider } from './context/AuthContext';
 
@@ -27,6 +28,16 @@ function App() {
               element={
                 <ProtectedRoute>
                   <UploadView />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Protected route — Admin Dashboard */}
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute>
+                  <AdminDashboard />
                 </ProtectedRoute>
               }
             />

@@ -8,6 +8,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { getMarkerColor, getMarkerLabel, useWindowWidth } from '../utils/pdfHelpers';
+import { logAction } from '../utils/logger';
 
 // Set the worker source from a reliable CDN to ensure compatibility
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -27,6 +28,7 @@ const UploadView = () => {
   const { logout, currentUser } = useAuth();
 
   const [file, setFile] = useState(null);
+  const [clientId, setClientId] = useState('');
   const [fileUrl, setFileUrl] = useState(null);
   const [fileError, setFileError] = useState(''); // Validation error shown below the file input
   const [numPages, setNumPages] = useState(null);
@@ -292,12 +294,13 @@ const UploadView = () => {
   // because all fields are always read together (never paginated individually),
   // so a single document read is more efficient than N sub-collection reads.
   // ---------------------------------------------------------------------------
-  const saveDocumentToFirestore = async (fileId, fileName, fileUrl, confirmedFields) => {
+  const saveDocumentToFirestore = async (fileId, fileName, fileUrl, confirmedFields, clientId) => {
     const documentRef = doc(db, 'documents', fileId);
 
     await setDoc(documentRef, {
       fileName,
       fileUrl,
+      clientId,
       ownerId:   currentUser.uid,
       createdAt: new Date().toISOString(),
       // Map fields to a clean schema; `label` is only included for customText fields
@@ -312,6 +315,8 @@ const UploadView = () => {
         ...(field.label ? { label: field.label } : {}),
       })),
     });
+
+    await logAction('create_doc', fileId, { fileName, clientId, ownerId: currentUser.uid });
   };
 
   const handleUpload = async () => {
@@ -346,7 +351,7 @@ const UploadView = () => {
       const fileUrl = await getDownloadURL(storageRef);
 
       // Step 3 — save the full document record (including confirmed fields) to Firestore
-      await saveDocumentToFirestore(fileId, file.name, fileUrl, confirmedFields);
+      await saveDocumentToFirestore(fileId, file.name, fileUrl, confirmedFields, clientId);
 
       // Step 4 — generate and display the shareable signing link
       const link = `${window.location.origin}/sign/${fileId}`;
@@ -380,14 +385,22 @@ const UploadView = () => {
   };
 
   return (
-    <div className="upload-view">
+    <div className="upload-view position-relative">
       {/* Sign Out button — fixed to the top-right corner of the upload card */}
-      <button
-        onClick={logout}
-        className="btn btn-secondary signout-btn"
-      >
-        Sign Out
-      </button>
+      <div className="flex gap-2 absolute top-4 right-4">
+        <button
+          onClick={() => window.location.href = '/admin'}
+          className="btn btn-secondary"
+        >
+          Admin Dashboard
+        </button>
+        <button
+          onClick={logout}
+          className="btn btn-secondary signout-btn position-static"
+        >
+          Sign Out
+        </button>
+      </div>
 
       <h1>SignFlow</h1>
       <p className="subtitle">Upload a PDF document to generate a shareable signing link.</p>
@@ -398,6 +411,14 @@ const UploadView = () => {
           accept="application/pdf" 
           onChange={handleFileChange} 
           className="file-input"
+        />
+        <input 
+          type="text" 
+          placeholder="Client ID (Optional)"
+          value={clientId}
+          onChange={(e) => setClientId(e.target.value)}
+          className="client-id-input mt-4 w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+          style={{ marginTop: '1rem' }}
         />
       </div>
 

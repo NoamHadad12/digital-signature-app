@@ -22,7 +22,7 @@
 //     nh      number                 Normalised height (0–1)
 //     label   string?               Only present on customText markers
 
-import { db } from '../firebase';
+import { db, storage } from '../firebase';
 import {
   doc,
   setDoc,
@@ -30,7 +30,14 @@ import {
   addDoc,
   getDoc,
   getDocs,
+  query,
+  where,
+  orderBy,
+  deleteDoc,
+  updateDoc
 } from 'firebase/firestore';
+import { ref, deleteObject } from 'firebase/storage';
+import { logAction } from '../utils/logger';
 
 // ---------------------------------------------------------------------------
 // saveDocument
@@ -124,4 +131,93 @@ export const fetchDocument = async (documentId) => {
   }
 
   return { data, markers };
+};
+
+// ---------------------------------------------------------------------------
+// getFilteredDocuments
+// Fetches documents based on clientId and createdAt date range.
+// ---------------------------------------------------------------------------
+export const getFilteredDocuments = async (clientId, startDate, endDate) => {
+  const docsRef = collection(db, 'documents');
+  let constraints = [];
+
+  if (clientId) {
+    constraints.push(where('clientId', '==', clientId));
+  }
+
+  if (startDate) {
+    constraints.push(where('createdAt', '>=', new Date(startDate).toISOString()));
+  }
+
+  if (endDate) {
+    const endDocDate = new Date(endDate);
+    endDocDate.setHours(23, 59, 59, 999);
+    constraints.push(where('createdAt', '<=', endDocDate.toISOString()));
+  }
+
+  // To combine equality checks with range filters (like `>=` and `<=`), we might need a composite index on Firestore.
+  // The orderBy('createdAt') will automatically work if no equality checks break it.
+  constraints.push(orderBy('createdAt', 'desc'));
+
+  const q = query(docsRef, ...constraints);
+  
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+};
+
+// ---------------------------------------------------------------------------
+// deleteDocument
+// Completely removes a document and its markers from Firestore, and the PDF
+// from Storage, and logs the deletion.
+// ---------------------------------------------------------------------------
+export const deleteDocument = async (documentId, documentData) => {
+  try {
+    // 1. Delete actual PDF file from Firebase Storage
+    const storagePath = documentData.fileRef || `pdfs/${documentId}.pdf`;
+    const fileRef = ref(storage, storagePath);
+    try {
+      await deleteObject(fileRef);
+    } catch (e) {
+      console.warn('Storage file not found or already deleted', e);
+    }
+    
+    // 2. Delete all associated markers in the sub-collection
+    const documentRef = doc(db, 'documents', documentId);
+    const markersRef = collection(documentRef, 'markers');
+    const markersSnap = await getDocs(markersRef);
+    const deletePromises = markersSnap.docs.map((markerDoc) => deleteDoc(markerDoc.ref));
+    await Promise.all(deletePromises);
+    
+    // 3. Delete the document from Firestore
+    await deleteDoc(documentRef);
+    
+    // 4. Log Action
+    await logAction('delete_doc', documentId, { 
+      fileName: documentData.fileName,
+      clientId: documentData.clientId 
+    });
+  } catch (error) {
+    console.error('Error deleting document:', error);
+    throw error;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// editDocumentName
+// Updates the fileName of an existing document.
+// ---------------------------------------------------------------------------
+export const editDocumentName = async (documentId, newFileName) => {
+  try {
+    const documentRef = doc(db, 'documents', documentId);
+    await updateDoc(documentRef, {
+      fileName: newFileName
+    });
+    
+    await logAction('edit_doc', documentId, {
+      newFileName
+    });
+  } catch (error) {
+    console.error('Error editing document name:', error);
+    throw error;
+  }
 };

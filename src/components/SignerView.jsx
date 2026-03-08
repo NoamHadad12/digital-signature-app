@@ -8,6 +8,7 @@ import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { getMarkerColor, getMarkerLabel, getMarkerKey, useWindowWidth } from '../utils/pdfHelpers';
 import { fetchDocument } from '../services/dbService';
+import { logAction } from '../utils/logger';
 
 // Set the worker source from a reliable CDN to ensure compatibility
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -132,6 +133,9 @@ const SignerView = () => {
 
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Failed to sign the document.');
+
+      // Log the signing action
+      await logAction('sign_doc', documentId, { signedPdfUrl: result.downloadUrl });
 
       setSignedPdfUrl(result.downloadUrl);
       setIsCompleted(true);
