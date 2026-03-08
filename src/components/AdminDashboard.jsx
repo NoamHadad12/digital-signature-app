@@ -39,6 +39,7 @@ const formatDate = (iso) => {
 export default function AdminDashboard() {
   const {
     userProfile,
+    logout,
     documents,
     loading,
     startDate,
