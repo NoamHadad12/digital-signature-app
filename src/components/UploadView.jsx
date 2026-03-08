@@ -1,384 +1,59 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { storage, db } from '../firebase';
-import { useAuth } from '../context/AuthContext';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, setDoc } from 'firebase/firestore';
-import { v4 as uuidv4 } from 'uuid';
+import React from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
-import { getMarkerColor, getMarkerLabel, useWindowWidth } from '../utils/pdfHelpers';
+import { getMarkerColor } from '../utils/pdfHelpers';
+import { useUploadView, FIELD_TYPES } from '../hooks/useUploadView';
 
-// Set the worker source from a reliable CDN to ensure compatibility
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
-// Predefined field types the admin can place on the document.
-// 'customText' prompts the admin for a label after drawing the box.
-const FIELD_TYPES = [
-  { key: 'signature',  label: 'Signature',     type: 'signature',  color: '#e53e3e' },
-  { key: 'date',       label: 'Date',           type: 'date',       color: '#059669' },
-  { key: 'customText', label: '+ Custom Field', type: 'customText', color: '#2563eb' },
-];
-
-
-
 const UploadView = () => {
-  const navigate = useNavigate();
-  // Expose auth helpers and the current user object from the auth context
-  const { logout, currentUser, userProfile } = useAuth();
-  const [file, setFile] = useState(null);
-  const [fileUrl, setFileUrl] = useState(null);
-  const [fileError, setFileError] = useState(''); // Validation error shown below the file input
-  const [numPages, setNumPages] = useState(null);
-  // Single source of truth for ALL fields on the document.
-  // Each entry: { id, type, label?, page, nx, ny, nw, nh, confirmed: boolean }
-  // confirmed=true  → solid border, saved on Upload
-  // confirmed=false → dashed border, AI suggestion awaiting approval
-  const [fields, setFields] = useState([]);
-  // The field type the admin has selected before drawing the next box
-  const [activeFieldType, setActiveFieldType] = useState('signature');
-  const [uploading, setUploading] = useState(false);
-  const [generatedLink, setGeneratedLink] = useState('');
-  const [isCopied, setIsCopied] = useState(false);
-
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiError, setAiError] = useState(null);
-  // ID of the field whose label is currently being edited inline
-  const [editingSuggestionId, setEditingSuggestionId] = useState(null);
-  const [editingLabel, setEditingLabel] = useState('');
-
-  // Drag-to-draw state
-  const windowWidth = useWindowWidth();
-
-  const [isDrawing, setIsDrawing] = useState(false);
-  // Tracks the single active pointer interaction: array index + action type
-  // type: 'move' | 'resize' | null
-  const [interaction, setInteraction] = useState({ index: null, type: null });
-  const [drawStart, setDrawStart] = useState(null);
-  const [drawingBox, setDrawingBox] = useState(null);
-  const currentPageRef = useRef(null);
-  const pageRectRef = useRef(null);
-
-  // When a customText box is drawn, hold it here until the admin names it
-  const [pendingBox, setPendingBox] = useState(null);
-  const [pendingLabel, setPendingLabel] = useState('');
-
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
-
-    // Reject files larger than 10 MB before doing anything else
-    if (selectedFile && selectedFile.size > 10 * 1024 * 1024) {
-      setFileError('File is too large! Maximum allowed size is 10MB.');
-      e.target.value = ''; // Clear the file input so the user can pick again
-      return;
-    }
-
-    // Clear any previous error when a valid file is selected
-    setFileError('');
-    setFile(selectedFile);
-    setGeneratedLink(''); // Reset link on new upload
-    setIsCopied(false);   // Reset copied state on new upload
-    setFields([]);        // Discard all fields (confirmed and pending) from a previous file
-    setAiError(null);
-
-    if (selectedFile) {
-      setFileUrl(URL.createObjectURL(selectedFile));
-    } else {
-      setFileUrl(null);
-    }
-  };
-
-  const handleDocumentLoadSuccess = ({ numPages }) => {
-    setNumPages(numPages);
-  };
-
-  // Record start point and page rect when the user begins dragging
-  const handleMouseDown = (e, pageNumber) => {
-    e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
-    pageRectRef.current = rect;
-    currentPageRef.current = pageNumber;
-    const nx = (e.clientX - rect.left) / rect.width;
-    const ny = (e.clientY - rect.top) / rect.height;
-    setIsDrawing(true);
-    setDrawStart({ nx, ny });
-    setDrawingBox(null);
-  };
-
-  // Update the live preview box while the user drags
-  const handleMouseMove = (e, pageNumber) => {
-    if (!isDrawing || pageNumber !== currentPageRef.current || !pageRectRef.current) return;
-    const rect = pageRectRef.current;
-    const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
-    // Support dragging in any direction by normalizing start/end
-    setDrawingBox({
-      nx: Math.min(drawStart.nx, nx),
-      ny: Math.min(drawStart.ny, ny),
-      nw: Math.abs(nx - drawStart.nx),
-      nh: Math.abs(ny - drawStart.ny),
-    });
-  };
-
-  // Finalize the bounding box when the user releases the mouse
-  const handleMouseUp = (e, pageNumber) => {
-    if (!isDrawing) return;
-    const rect = pageRectRef.current;
-    const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
-    const boxNx = Math.min(drawStart.nx, nx);
-    const boxNy = Math.min(drawStart.ny, ny);
-    const boxNw = Math.abs(nx - drawStart.nx);
-    const boxNh = Math.abs(ny - drawStart.ny);
-    setIsDrawing(false);
-    setDrawingBox(null);
-    // Only add the marker if the box is large enough to be intentional (> 1% in both dimensions)
-    if (boxNw > 0.01 && boxNh > 0.01) {
-      const ft = FIELD_TYPES.find((f) => f.key === activeFieldType) || FIELD_TYPES[0];
-      if (ft.type === 'customText') {
-        // Custom fields need a label — open the naming dialog before committing
-        setPendingBox({ type: ft.type, page: pageNumber, nx: boxNx, ny: boxNy, nw: boxNw, nh: boxNh });
-        setPendingLabel('');
-      } else {
-        // Manually drawn fields are immediately confirmed
-        setFields((prev) => [
-          ...prev,
-          { id: crypto.randomUUID(), type: ft.type, page: pageNumber, nx: boxNx, ny: boxNy, nw: boxNw, nh: boxNh, confirmed: true },
-        ]);
-      }
-    }
-  };
-
-  // Remove a field by its unique ID, regardless of whether it is confirmed or pending
-  const handleRemoveField = (idToRemove) => {
-    setFields((prev) => prev.filter((f) => f.id !== idToRemove));
-  };
-
-  // ---------------------------------------------------------------------------
-  // handleAnalyze
-  // Encodes the selected PDF as base64 and sends it to /api/analyze-pdf.
-  // The response populates the `suggestions` array — nothing is saved to
-  // Firestore yet.  The admin must approve each suggestion individually.
-  // ---------------------------------------------------------------------------
-  const handleAnalyze = async () => {
-    if (!file) return;
-    setIsAnalyzing(true);
-    setAiError(null);
-    // Remove any existing unconfirmed AI suggestions before a fresh analysis run
-    setFields((prev) => prev.filter((f) => f.confirmed));
-
-    try {
-      // Use FileReader instead of btoa() + Uint8Array.
-      // btoa() throws "Invalid character" on binary PDFs larger than ~1 MB because
-      // it cannot handle raw byte values above 0x7F.
-      // FileReader.readAsDataURL() handles arbitrary binary data correctly and
-      // returns a safe data-URI; we strip the prefix so only raw base64 is sent.
-      const base64Pdf = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload  = () => {
-          // result format: "data:application/pdf;base64,JVBERi0x..."
-          // Split at the comma and take everything after it (raw base64 only).
-          resolve(reader.result.split(',')[1]);
-        };
-        reader.onerror = () => reject(new Error('FileReader failed to read the PDF.'));
-        reader.readAsDataURL(file);
-      });
-
-      const response = await fetch('/api/analyze-pdf', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ base64Pdf }),
-      });
-
-      if (!response.ok) {
-        // Detect quota-exceeded (429) before reading the body so we can show
-        // a friendly message regardless of what the backend error text says.
-        if (response.status === 429) {
-          throw new Error('AI Quota Reached: The free tier limit has been exceeded. Please wait about 60 seconds and try again or use a smaller document.');
-        }
-        const err = await response.json();
-        throw new Error(err.error || 'AI analysis failed.');
-      }
-
-      const { suggestions: raw } = await response.json();
-      console.log("Suggestions received:", raw);
-
-      // Append each AI suggestion as an unconfirmed field with a unique ID
-      setFields((prev) => [
-        ...prev,
-        ...raw.map((s) => ({ ...s, id: crypto.randomUUID(), confirmed: false })),
-      ]);
-    } catch (error) {
-      console.error('[AI] Analysis error:', error);
-      // Also catch quota errors that surfaced through the error message text
-      const msg = error.message || '';
-      if (msg.includes('429') || /quota/i.test(msg)) {
-        setAiError({
-          title: 'Daily Limit Reached',
-          description: 'The AI has reached its free-tier limit. Please wait about 60 seconds and try again, or add the fields manually.',
-        });
-      } else {
-        setAiError({
-          title: 'Oops! The AI needs a moment',
-          description: 'We hit a small snag while trying to read your document, but you can give it another try or simply add the fields yourself.',
-        });
-      }
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  // ---------------------------------------------------------------------------
-  // approveSuggestion
-  // Marks an unconfirmed field as confirmed (dashed → solid border).
-  // If an inline label edit was open for this field, the current value is applied.
-  // ---------------------------------------------------------------------------
-  const approveSuggestion = (id) => {
-    setFields((prev) =>
-      prev.map((f) => {
-        if (f.id !== id) return f;
-        const confirmedLabel =
-          editingSuggestionId === id ? editingLabel.trim() || f.label : f.label;
-        return {
-          ...f,
-          confirmed: true,
-          ...(f.type === 'customText' ? { label: confirmedLabel } : {}),
-        };
-      })
-    );
-    if (editingSuggestionId === id) setEditingSuggestionId(null);
-  };
-
-  // ---------------------------------------------------------------------------
-  // rejectSuggestion
-  // Removes an unconfirmed field without promoting it.
-  // ---------------------------------------------------------------------------
-  const rejectSuggestion = (id) => {
-    setFields((prev) => prev.filter((f) => f.id !== id));
-    if (editingSuggestionId === id) setEditingSuggestionId(null);
-  };
-
-  // Confirm all pending AI suggestions at once
-  const approveAll = () => {
-    setFields((prev) => prev.map((f) => ({ ...f, confirmed: true })));
-    setEditingSuggestionId(null);
-  };
-
-  // Confirm the pending customText box by attaching the admin's label and adding it to fields
-  const confirmPendingBox = () => {
-    if (!pendingBox || !pendingLabel.trim()) return;
-    setFields((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), ...pendingBox, label: pendingLabel.trim(), confirmed: true },
-    ]);
-    setPendingBox(null);
-    setPendingLabel('');
-  };
-
-  // ---------------------------------------------------------------------------
-  // saveDocumentToFirestore
-  // Writes the confirmed document record to the `documents` Firestore collection.
-  //
-  // Schema written:
-  //   fileName  {string}  Original filename as selected by the admin
-  //   fileUrl   {string}  Firebase Storage download URL (not the storage path)
-  //   ownerId   {string}  Firebase Auth UID of the admin who uploaded the file
-  //   createdAt {string}  ISO-8601 timestamp of when the record was created
-  //   fields    {Array}   Flat array of confirmed field markers (Human-in-the-Loop
-  //                       approved). Each entry mirrors the marker schema:
-  //                       { index, type, page, nx, ny, nw, nh, label? }
-  //
-  // Design rationale: fields are stored as a flat array instead of a sub-collection
-  // because all fields are always read together (never paginated individually),
-  // so a single document read is more efficient than N sub-collection reads.
-  // ---------------------------------------------------------------------------
-  const saveDocumentToFirestore = async (fileId, fileName, fileUrl, confirmedFields) => {
-    const documentRef = doc(db, 'documents', fileId);
-
-    await setDoc(documentRef, {
-      fileName,
-      fileUrl,
-      clientId:  currentUser.uid,
-      createdAt: new Date().toISOString(),
-      // Map fields to a clean schema; `label` is only included for customText fields
-      fields: confirmedFields.map((field, index) => ({
-        index,
-        type:  field.type  || 'signature',
-        page:  field.page  ?? 1,
-        nx:    field.nx,
-        ny:    field.ny,
-        nw:    field.nw,
-        nh:    field.nh,
-        ...(field.label ? { label: field.label } : {}),
-      })),
-    });
-  };
-
-  const handleUpload = async () => {
-    if (!file) {
-      alert('Please select a PDF file first.');
-      return;
-    }
-    const confirmedFields  = fields.filter((f) => f.confirmed);
-    const pendingFields    = fields.filter((f) => !f.confirmed);
-    if (confirmedFields.length === 0 && pendingFields.length > 0) {
-      alert(`You have ${pendingFields.length} pending AI suggestions. Please approve or reject them before uploading.`);
-      return;
-    }
-    if (confirmedFields.length === 0) {
-      alert('Please drag on the document to place at least one field.');
-      return;
-    }
-    
-    setUploading(true);
-
-    try {
-      setGeneratedLink('');
-      setIsCopied(false);
-
-      const fileId = uuidv4();
-
-      // Step 1 — upload the PDF binary to Firebase Storage
-      const storageRef = ref(storage, `pdfs/${fileId}.pdf`);
-      await uploadBytes(storageRef, file);
-
-      // Step 2 — retrieve the permanent download URL from Firebase Storage
-      const fileUrl = await getDownloadURL(storageRef);
-
-      // Step 3 — save the full document record (including confirmed fields) to Firestore
-      await saveDocumentToFirestore(fileId, file.name, fileUrl, confirmedFields);
-
-      // Step 4 — generate and display the shareable signing link
-      const link = `${window.location.origin}/sign/${fileId}`;
-      setGeneratedLink(link);
-    } catch (error) {
-      // Log EXACT Firebase error clearly into the console
-      console.error("=== FIREBASE UPLOAD ERROR ===");
-      console.error(error);
-      console.error("Error Code:", error?.code);
-      console.error("Error Message:", error?.message);
-      alert(`Upload failed: ${error?.message || "Unknown error occurred. Check browser console."}`);
-    } finally {
-      // Explicitly clean up loading state unconditionally so the UI never hangs
-      setUploading(false);
-    }
-  };
-
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(generatedLink).then(() => {
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000); // Reset after 2 seconds
-    }, (err) => {
-      console.error('Failed to copy link: ', err);
-    });
-  };
-
-  const shareOnWhatsApp = () => {
-    const message = `You've been sent a document to sign: ${generatedLink}`;
-    const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-  };
+  const {
+    navigate,
+    logout,
+    userProfile,
+    fileError,
+    fileUrl,
+    generatedLink,
+    isCopied,
+    numPages,
+    fields,
+    setFields,
+    activeFieldType,
+    setActiveFieldType,
+    uploading,
+    isAnalyzing,
+    setAiError,
+    aiError,
+    editingSuggestionId,
+    setEditingSuggestionId,
+    editingLabel,
+    setEditingLabel,
+    windowWidth,
+    isDrawing,
+    currentPageRef,
+    drawingBox,
+    interaction,
+    setInteraction,
+    pendingBox,
+    setPendingBox,
+    pendingLabel,
+    setPendingLabel,
+    handleFileChange,
+    handleDocumentLoadSuccess,
+    handleMouseDown,
+    handleMouseMove,
+    handleMouseUp,
+    handlePointerMove,
+    handleRemoveField,
+    handleAnalyze,
+    approveSuggestion,
+    approveAll,
+    confirmPendingBox,
+    handleUpload,
+    copyToClipboard,
+    shareOnWhatsApp,
+  } = useUploadView();
 
   return (
     <div className="upload-view">
@@ -510,7 +185,6 @@ const UploadView = () => {
                 <div style={{ color: '#991b1b', fontWeight: 400 }}>{aiError.description}</div>
               </div>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginTop: 1 }}>
-                {/* Retry: dismiss the error and immediately re-run the analysis */}
                 <button
                   onClick={() => { setAiError(null); handleAnalyze(); }}
                   style={{
@@ -526,7 +200,6 @@ const UploadView = () => {
                 >
                   Retry
                 </button>
-                {/* Close: dismiss the error without retrying */}
                 <button
                   onClick={() => setAiError(null)}
                   style={{
@@ -650,22 +323,7 @@ const UploadView = () => {
                     onMouseDown={(e) => handleMouseDown(e, pageNumber)}
                     onMouseMove={(e) => handleMouseMove(e, pageNumber)}
                     onMouseUp={(e) => handleMouseUp(e, pageNumber)}
-                    onPointerMove={(e) => {
-                      if (interaction.index === null) return;
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const curNx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                      const curNy = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
-                      setFields((prev) =>
-                        prev.map((f, i) => {
-                          if (i !== interaction.index) return f;
-                          if (interaction.type === 'move') return { ...f, nx: curNx, ny: curNy };
-                          // Resize: distance from field's fixed top-left corner to the cursor
-                          const newNw = Math.max(0.05, Math.min(1 - f.nx, curNx - f.nx));
-                          const newNh = Math.max(0.02, Math.min(1 - f.ny, curNy - f.ny));
-                          return { ...f, nw: newNw, nh: newNh };
-                        })
-                      );
-                    }}
+                    onPointerMove={handlePointerMove}
                     onPointerUp={() => setInteraction({ index: null, type: null })}
                     onPointerLeave={() => setInteraction({ index: null, type: null })}
                   >
