@@ -16,7 +16,7 @@ async function loadHeeboFont() {
   // Prefer the locally-bundled copy — zero latency, no external dependency
   try {
     return readFileSync(join(__dirname, 'fonts', 'Heebo-Regular.ttf'));
-  } catch (_) {
+  } catch {
     // File not found in the bundle; fall through to network sources
   }
 
@@ -29,7 +29,7 @@ async function loadHeeboFont() {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
       if (res.ok) return Buffer.from(await res.arrayBuffer());
-    } catch (_) {
+    } catch {
       // This CDN failed — try the next one
     }
   }

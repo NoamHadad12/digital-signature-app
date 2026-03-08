@@ -12,6 +12,7 @@ import { auth, db } from '../firebase';
 const AuthContext = createContext(null);
 
 // Custom hook for easy access to the auth context from any component
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
