@@ -59,6 +59,10 @@ export default function AdminDashboard() {
     handleEditSubmit
   } = useAdminDashboard();
 
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans">
+      <Toast toast={toast} />
+
       {/* Top Navigation Bar - sticky white header */}
       <header className="flex items-center justify-end gap-4 p-4 absolute top-0 right-0 w-full z-30">
         {userProfile?.firstName && (
