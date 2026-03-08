@@ -8,20 +8,6 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { getMarkerColor, getMarkerLabel, useWindowWidth } from '../utils/pdfHelpers';
-import { logAction } from '../utils/logger';
-import { updateDocumentStatus } from '../services/dbService';
-import {
-  FileText,
-  LayoutDashboard,
-  LogOut,
-  UploadCloud,
-  Sparkles,
-  Loader2,
-  AlertTriangle,
-  CheckCircle2,
-  Copy,
-  MessageCircle,
-} from 'lucide-react';
 
 // Set the worker source from a reliable CDN to ensure compatibility
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -38,13 +24,11 @@ const FIELD_TYPES = [
 
 const UploadView = () => {
   // Expose auth helpers and the current user object from the auth context
-  const { logout, currentUser, userProfile } = useAuth();
+  const { logout, currentUser } = useAuth();
 
   const [file, setFile] = useState(null);
   const [fileUrl, setFileUrl] = useState(null);
   const [fileError, setFileError] = useState(''); // Validation error shown below the file input
-  // ID of the document just uploaded — used to update status to 'sent' on link copy
-  const [uploadedDocId, setUploadedDocId] = useState('');
   const [numPages, setNumPages] = useState(null);
   // Single source of truth for ALL fields on the document.
   // Each entry: { id, type, label?, page, nx, ny, nw, nh, confirmed: boolean }
@@ -94,7 +78,6 @@ const UploadView = () => {
     setFile(selectedFile);
     setGeneratedLink(''); // Reset link on new upload
     setIsCopied(false);   // Reset copied state on new upload
-    setUploadedDocId(''); // Reset tracked doc ID on new upload
     setFields([]);        // Discard all fields (confirmed and pending) from a previous file
     setAiError(null);
 
@@ -295,8 +278,19 @@ const UploadView = () => {
   // ---------------------------------------------------------------------------
   // saveDocumentToFirestore
   // Writes the confirmed document record to the `documents` Firestore collection.
-  // clientId is always set to currentUser.uid — the user cannot override it.
-  // status is initialized to 'draft' and advances as the document lifecycle progresses.
+  //
+  // Schema written:
+  //   fileName  {string}  Original filename as selected by the admin
+  //   fileUrl   {string}  Firebase Storage download URL (not the storage path)
+  //   ownerId   {string}  Firebase Auth UID of the admin who uploaded the file
+  //   createdAt {string}  ISO-8601 timestamp of when the record was created
+  //   fields    {Array}   Flat array of confirmed field markers (Human-in-the-Loop
+  //                       approved). Each entry mirrors the marker schema:
+  //                       { index, type, page, nx, ny, nw, nh, label? }
+  //
+  // Design rationale: fields are stored as a flat array instead of a sub-collection
+  // because all fields are always read together (never paginated individually),
+  // so a single document read is more efficient than N sub-collection reads.
   // ---------------------------------------------------------------------------
   const saveDocumentToFirestore = async (fileId, fileName, fileUrl, confirmedFields) => {
     const documentRef = doc(db, 'documents', fileId);
@@ -304,11 +298,7 @@ const UploadView = () => {
     await setDoc(documentRef, {
       fileName,
       fileUrl,
-      // clientId is automatically bound to the authenticated user's UID — privacy by design
-      clientId:  currentUser.uid,
       ownerId:   currentUser.uid,
-      // Initial lifecycle status; advances to 'sent' → 'opened' → 'signed'
-      status:    'draft',
       createdAt: new Date().toISOString(),
       // Map fields to a clean schema; `label` is only included for customText fields
       fields: confirmedFields.map((field, index) => ({
@@ -322,8 +312,6 @@ const UploadView = () => {
         ...(field.label ? { label: field.label } : {}),
       })),
     });
-
-    await logAction('create_doc', fileId, { fileName, clientId: currentUser.uid, ownerId: currentUser.uid });
   };
 
   const handleUpload = async () => {
@@ -363,8 +351,6 @@ const UploadView = () => {
       // Step 4 — generate and display the shareable signing link
       const link = `${window.location.origin}/sign/${fileId}`;
       setGeneratedLink(link);
-      // Store the doc ID so copyToClipboard can update the status to 'sent'
-      setUploadedDocId(fileId);
     } catch (error) {
       // Log EXACT Firebase error clearly into the console
       console.error("=== FIREBASE UPLOAD ERROR ===");
@@ -381,13 +367,7 @@ const UploadView = () => {
   const copyToClipboard = () => {
     navigator.clipboard.writeText(generatedLink).then(() => {
       setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
-      // Advance status to 'sent' the first time the owner copies the link
-      if (uploadedDocId) {
-        updateDocumentStatus(uploadedDocId, 'sent').catch((err) =>
-          console.warn('[status] Failed to mark document as sent:', err)
-        );
-      }
+      setTimeout(() => setIsCopied(false), 2000); // Reset after 2 seconds
     }, (err) => {
       console.error('Failed to copy link: ', err);
     });
@@ -397,616 +377,561 @@ const UploadView = () => {
     const message = `You've been sent a document to sign: ${generatedLink}`;
     const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-    // Also advance status to 'sent' when sharing via WhatsApp
-    if (uploadedDocId) {
-      updateDocumentStatus(uploadedDocId, 'sent').catch((err) =>
-        console.warn('[status] Failed to mark document as sent:', err)
-      );
-    }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="upload-view">
+      {/* Sign Out button — fixed to the top-right corner of the upload card */}
+      <button
+        onClick={logout}
+        className="btn btn-secondary signout-btn"
+      >
+        Sign Out
+      </button>
 
-      {/* Sticky top navigation header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-3.5 flex items-center justify-between shadow-sm sticky top-0 z-30">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shrink-0">
-            <div className="w-4 h-4 text-white">
-              <FileText className="w-full h-full" />
-            </div>
-          </div>
-          <span className="text-lg font-bold text-gray-900 tracking-tight">SignFlow</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {userProfile.firstName && (
-            <span className="text-sm font-medium text-gray-700 hidden sm:block ml-1" dir="rtl">
-              שלום {userProfile.firstName} {userProfile.lastName}
-            </span>
-          )}
-          <button
-            onClick={() => window.location.href = '/admin'}
-            className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-blue-600 border border-gray-300
-                       hover:border-blue-400 px-3 py-1.5 rounded-lg transition-colors"
-          >
-            <div className="w-4 h-4">
-              <LayoutDashboard className="w-full h-full" />
-            </div>
-            Admin Dashboard
-          </button>
-          <button
-            onClick={logout}
-            className="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-red-600 border border-gray-300
-                       hover:border-red-300 px-3 py-1.5 rounded-lg transition-colors"
-          >
-            <div className="w-4 h-4">
-              <LogOut className="w-full h-full" />
-            </div>
-            Sign Out
-          </button>
-        </div>
-      </header>
+      <h1>SignFlow</h1>
+      <p className="subtitle">Upload a PDF document to generate a shareable signing link.</p>
+      
+      <div className="drop-zone">
+        <input 
+          type="file" 
+          accept="application/pdf" 
+          onChange={handleFileChange} 
+          className="file-input"
+        />
+      </div>
 
-      {/* Label dialog shown after admin draws a customText box */}
-      {pendingBox && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div
-            className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-bold text-gray-900 mb-1">Name this field</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              Enter a label so the signer knows what to write (e.g. "Full Name", "ID Number").
-            </p>
-            <input
-              autoFocus
-              type="text"
-              placeholder="Field label"
-              value={pendingLabel}
-              onChange={(e) => setPendingLabel(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && pendingLabel.trim()) confirmPendingBox();
-                if (e.key === 'Escape') setPendingBox(null);
-              }}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none
-                         focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-5 transition"
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setPendingBox(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmPendingBox}
-                disabled={!pendingLabel.trim()}
-                className="px-5 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm transition-colors disabled:opacity-60"
-              >
-                Add Field
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Inline error shown when the selected file exceeds the size limit */}
+      {fileError && (
+        <p style={{
+          color: '#dc2626',
+          backgroundColor: '#fef2f2',
+          border: '1px solid #fca5a5',
+          borderRadius: '6px',
+          padding: '8px 12px',
+          marginTop: '10px',
+          fontSize: '0.9rem',
+          fontWeight: 500,
+        }}>
+          {fileError}
+        </p>
       )}
 
-      {/* Main content area */}
-      <main className="max-w-3xl mx-auto px-4 py-8 space-y-6" style={{ paddingBottom: fileUrl && !generatedLink ? '96px' : '32px' }}>
+      {/* Render PDF Preview to select signature location */}
+      {fileUrl && !generatedLink && (
+        <div style={{ marginTop: '20px' }}>
+          <p style={{ fontWeight: 600, color: 'var(--primary-color)', marginBottom: '5px' }}>
+            Action Required: Select a field type, then click and drag to place it on the document.
+          </p>
+          <p style={{ color: 'var(--text-light-color)', fontSize: '0.9rem', marginBottom: '10px' }}>
+            You can place multiple fields of different types. Click &times; on any field to remove it.
+          </p>
 
-        {/* File picker card - shown when no link has been generated yet */}
-        {!generatedLink && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8">
-            <div className="mb-4">
-              <h2 className="text-lg font-bold text-gray-900">Upload Document</h2>
-              <p className="text-sm text-gray-500 mt-1">
-                Select a PDF to generate a shareable signing link. Maximum size: 10&nbsp;MB.
-              </p>
-            </div>
+          {/* Field type selector + AI detect button */}
+          <div className="field-type-selector" style={{ alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            {FIELD_TYPES.map((ft) => (
+              <button
+                key={ft.key}
+                className={`field-type-btn${activeFieldType === ft.key ? ' active' : ''}`}
+                onClick={() => setActiveFieldType(ft.key)}
+                style={{
+                  borderColor: ft.color,
+                  color: activeFieldType === ft.key ? 'white' : ft.color,
+                  backgroundColor: activeFieldType === ft.key ? ft.color : 'transparent',
+                }}
+              >
+                {ft.label}
+              </button>
+            ))}
 
-            {/* Drop zone - click to open file picker */}
-            <label className="group flex flex-col items-center justify-center gap-3 border-2 border-dashed border-gray-300
-                              hover:border-blue-400 rounded-2xl p-8 cursor-pointer bg-gray-50 hover:bg-blue-50/50 transition-all">
-              <input type="file" accept="application/pdf" onChange={handleFileChange} className="sr-only" />
-              <div className="w-12 h-12 text-gray-300 group-hover:text-blue-400 transition-colors">
-                <UploadCloud className="w-full h-full" />
-              </div>
-              <div className="text-center">
-                <span className="text-sm font-semibold text-gray-700 group-hover:text-blue-600 transition-colors">
-                  {file ? file.name : 'Click to select a PDF'}
-                </span>
-                {!file && <p className="text-xs text-gray-400 mt-1">PDF files only, up to 10 MB</p>}
-              </div>
-            </label>
+            {/* Vertical divider */}
+            <span style={{ borderLeft: '1px solid #d1d5db', height: 28, margin: '0 4px' }} />
 
-            {/* File size error banner */}
-            {fileError && (
-              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 mt-4 text-sm text-red-700">
-                <div className="w-4 h-4 shrink-0 text-red-500">
-                  <AlertTriangle className="w-full h-full" />
-                </div>
-                {fileError}
-              </div>
-            )}
+            {/* AI detection trigger button */}
+            <button
+              onClick={handleAnalyze}
+              disabled={isAnalyzing}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '6px',
+                border: '1.5px solid #7c3aed',
+                backgroundColor: isAnalyzing ? '#ede9fe' : '#7c3aed',
+                color: isAnalyzing ? '#7c3aed' : 'white',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                cursor: isAnalyzing ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.15s',
+              }}
+            >
+              {isAnalyzing ? (
+                <>
+                  <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⏳</span>
+                  Analyzing…
+                </>
+              ) : (
+                <>🤖 Detect Fields with AI</>
+              )}
+            </button>
           </div>
-        )}
 
-        {/* PDF workspace card - shown when file selected and link not yet generated */}
-        {fileUrl && !generatedLink && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-
-            {/* Instructions */}
-            <div className="mb-4">
-              <p className="text-sm font-semibold text-gray-800">
-                Select a field type, then click and drag on the document to place it.
-              </p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                You can place multiple fields of different types. Click &times; on any field to remove it.
-              </p>
-            </div>
-
-            {/* Field type selector + AI detect button */}
-            <div className="flex items-center gap-2 flex-wrap mb-4">
-              {FIELD_TYPES.map((ft) => (
+          {/* AI error message — shown as a dismissible red banner with Retry/Close actions */}
+          {aiError && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              color: '#b91c1c',
+              background: '#fef2f2',
+              border: '1px solid #fca5a5',
+              borderRadius: 6,
+              padding: '10px 14px',
+              fontSize: '0.85rem',
+              marginTop: 8,
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, marginBottom: 2 }}>⚠️ {aiError.title}</div>
+                <div style={{ color: '#991b1b', fontWeight: 400 }}>{aiError.description}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginTop: 1 }}>
+                {/* Retry: dismiss the error and immediately re-run the analysis */}
                 <button
-                  key={ft.key}
-                  onClick={() => setActiveFieldType(ft.key)}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-lg border-2 transition-colors"
+                  onClick={() => { setAiError(null); handleAnalyze(); }}
                   style={{
-                    borderColor:     ft.color,
-                    color:           activeFieldType === ft.key ? 'white' : ft.color,
-                    backgroundColor: activeFieldType === ft.key ? ft.color : 'transparent',
+                    background: '#dc2626',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 4,
+                    padding: '3px 10px',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
                   }}
                 >
-                  {ft.label}
+                  Retry
                 </button>
-              ))}
+                {/* Close: dismiss the error without retrying */}
+                <button
+                  onClick={() => setAiError(null)}
+                  style={{
+                    background: 'transparent',
+                    color: '#b91c1c',
+                    border: '1px solid #fca5a5',
+                    borderRadius: 4,
+                    padding: '3px 8px',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
 
-              <div className="w-px h-6 bg-gray-200 mx-1 shrink-0" />
-
-              {/* AI detection button - distinct violet theme */}
+          {/* Pending AI suggestions banner */}
+          {fields.some((f) => !f.confirmed) && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              background: '#f5f3ff',
+              border: '1px solid #c4b5fd',
+              borderRadius: 8,
+              padding: '8px 14px',
+              marginTop: 10,
+              fontSize: '0.88rem',
+              color: '#4c1d95',
+            }}>
+              <span>🤖 <strong>{fields.filter((f) => !f.confirmed).length}</strong> AI suggestion{fields.filter((f) => !f.confirmed).length !== 1 ? 's' : ''} pending review — approve or reject each field below.</span>
               <button
-                onClick={handleAnalyze}
-                disabled={isAnalyzing}
-                className="flex items-center gap-2 px-4 py-1.5 text-xs font-semibold rounded-lg
-                           bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-60 transition-colors"
+                onClick={approveAll}
+                style={{
+                  marginLeft: 'auto',
+                  padding: '4px 10px',
+                  borderRadius: 5,
+                  border: '1.5px solid #7c3aed',
+                  background: '#7c3aed',
+                  color: 'white',
+                  fontWeight: 600,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                }}
               >
-                {isAnalyzing ? (
-                  <>
-                    <div className="w-3.5 h-3.5 animate-spin">
-                      <Loader2 className="w-full h-full" />
-                    </div>
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <div className="w-3.5 h-3.5">
-                      <Sparkles className="w-full h-full" />
-                    </div>
-                    Detect with AI
-                  </>
-                )}
+                ✓ Approve All
+              </button>
+              <button
+                onClick={() => setFields((prev) => prev.filter((f) => f.confirmed))}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 5,
+                  border: '1.5px solid #dc2626',
+                  background: 'transparent',
+                  color: '#dc2626',
+                  fontWeight: 600,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                }}
+              >
+                ✕ Reject All
               </button>
             </div>
+          )}
 
-            {/* Hint for customText mode */}
-            {activeFieldType === 'customText' && (
-              <p className="text-xs text-blue-600 mb-3">
-                Drag a box on the PDF, then name the field.
-              </p>
-            )}
+          {activeFieldType === 'customText' && (
+            <p style={{ fontSize: '0.82rem', color: '#2563eb', marginBottom: 8, marginTop: 4 }}>
+              Drag a box on the PDF, then name the field.
+            </p>
+          )}
 
-            {/* AI error banner */}
-            {aiError && (
-              <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4 mb-3">
-                <div className="w-5 h-5 shrink-0 text-red-500 mt-0.5">
-                  <AlertTriangle className="w-full h-full" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-red-700 text-sm">{aiError.title}</p>
-                  <p className="text-red-600 text-xs mt-0.5">{aiError.description}</p>
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <button
-                    onClick={() => { setAiError(null); handleAnalyze(); }}
-                    className="text-xs font-semibold px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                  >
-                    Retry
-                  </button>
-                  <button
-                    onClick={() => setAiError(null)}
-                    className="text-xs font-medium px-3 py-1.5 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors"
-                  >
-                    Dismiss
-                  </button>
+          {/* Label dialog — shown after the admin draws a customText box */}
+          {pendingBox && (
+            <div className="label-dialog-overlay">
+              <div className="label-dialog">
+                <h3 className="label-dialog-title">Name this field</h3>
+                <p className="label-dialog-desc">Enter a label so the signer knows what to write (e.g. "Full Name", "ID Number", "Company").</p>
+                <input
+                  autoFocus
+                  className="label-dialog-input"
+                  type="text"
+                  placeholder="Field label"
+                  value={pendingLabel}
+                  onChange={(e) => setPendingLabel(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && pendingLabel.trim()) confirmPendingBox();
+                    if (e.key === 'Escape') setPendingBox(null);
+                  }}
+                />
+                <div className="label-dialog-actions">
+                  <button className="btn btn-secondary" onClick={() => setPendingBox(null)}>Cancel</button>
+                  <button className="btn btn-primary" onClick={confirmPendingBox} disabled={!pendingLabel.trim()}>Add Field</button>
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Pending AI suggestions banner */}
-            {fields.some((f) => !f.confirmed) && (
-              <div className="flex items-center gap-3 bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 mb-3">
-                <div className="w-4 h-4 shrink-0 text-violet-600">
-                  <Sparkles className="w-full h-full" />
-                </div>
-                <span className="text-sm text-violet-800">
-                  <strong>{fields.filter((f) => !f.confirmed).length}</strong>{' '}
-                  AI suggestion{fields.filter((f) => !f.confirmed).length !== 1 ? 's' : ''} pending review
-                </span>
-                <div className="ml-auto flex gap-2">
-                  <button
-                    onClick={approveAll}
-                    className="text-xs font-semibold px-3 py-1.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
+          <div className="pdf-document-container" style={{ textAlign: 'center' }}>
+            <Document 
+              file={fileUrl} 
+              onLoadSuccess={handleDocumentLoadSuccess}
+              loading={<div>Loading PDF preview...</div>}
+            >
+              {Array.from(new Array(numPages), (el, index) => {
+                const pageNumber = index + 1;
+                // All fields that belong to this page, with their position in the global array
+                const pageFields = fields
+                  .map((f, i) => ({ ...f, globalIndex: i }))
+                  .filter((f) => f.page === pageNumber);
+
+                return (
+                  <div
+                    key={`page_${pageNumber}`}
+                    className="pdf-page-wrapper"
+                    style={{
+                      cursor: interaction.index !== null ? (interaction.type === 'resize' ? 'nwse-resize' : 'grabbing') : 'crosshair',
+                      userSelect: 'none',
+                    }}
+                    onMouseDown={(e) => handleMouseDown(e, pageNumber)}
+                    onMouseMove={(e) => handleMouseMove(e, pageNumber)}
+                    onMouseUp={(e) => handleMouseUp(e, pageNumber)}
+                    onPointerMove={(e) => {
+                      if (interaction.index === null) return;
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const curNx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                      const curNy = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+                      setFields((prev) =>
+                        prev.map((f, i) => {
+                          if (i !== interaction.index) return f;
+                          if (interaction.type === 'move') return { ...f, nx: curNx, ny: curNy };
+                          // Resize: distance from field's fixed top-left corner to the cursor
+                          const newNw = Math.max(0.05, Math.min(1 - f.nx, curNx - f.nx));
+                          const newNh = Math.max(0.02, Math.min(1 - f.ny, curNy - f.ny));
+                          return { ...f, nw: newNw, nh: newNh };
+                        })
+                      );
+                    }}
+                    onPointerUp={() => setInteraction({ index: null, type: null })}
+                    onPointerLeave={() => setInteraction({ index: null, type: null })}
                   >
-                    Approve All
-                  </button>
-                  <button
-                    onClick={() => setFields((prev) => prev.filter((f) => f.confirmed))}
-                    className="text-xs font-medium px-3 py-1.5 border border-violet-300 text-violet-700 rounded-lg hover:bg-violet-50 transition-colors"
-                  >
-                    Reject All
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* PDF canvas with preserved drag-to-draw logic */}
-            <div className="pdf-document-container" style={{ textAlign: 'center' }}>
-              <Document
-                file={fileUrl}
-                onLoadSuccess={handleDocumentLoadSuccess}
-                loading={<div className="py-10 text-sm text-gray-400 text-center">Loading PDF preview...</div>}
-              >
-                {Array.from(new Array(numPages), (el, index) => {
-                  const pageNumber = index + 1;
-                  // All fields that belong to this page, with their position in the global array
-                  const pageFields = fields
-                    .map((f, i) => ({ ...f, globalIndex: i }))
-                    .filter((f) => f.page === pageNumber);
-
-                  return (
-                    <div
-                      key={`page_${pageNumber}`}
-                      className="pdf-page-wrapper"
-                      style={{
-                        cursor: interaction.index !== null ? (interaction.type === 'resize' ? 'nwse-resize' : 'grabbing') : 'crosshair',
-                        userSelect: 'none',
-                      }}
-                      onMouseDown={(e) => handleMouseDown(e, pageNumber)}
-                      onMouseMove={(e) => handleMouseMove(e, pageNumber)}
-                      onMouseUp={(e) => handleMouseUp(e, pageNumber)}
-                      onPointerMove={(e) => {
-                        if (interaction.index === null) return;
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const curNx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                        const curNy = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
-                        setFields((prev) =>
-                          prev.map((f, i) => {
-                            if (i !== interaction.index) return f;
-                            if (interaction.type === 'move') return { ...f, nx: curNx, ny: curNy };
-                            // Resize: distance from field's fixed top-left corner to the cursor
-                            const newNw = Math.max(0.05, Math.min(1 - f.nx, curNx - f.nx));
-                            const newNh = Math.max(0.02, Math.min(1 - f.ny, curNy - f.ny));
-                            return { ...f, nw: newNw, nh: newNh };
-                          })
-                        );
-                      }}
-                      onPointerUp={() => setInteraction({ index: null, type: null })}
-                      onPointerLeave={() => setInteraction({ index: null, type: null })}
-                    >
-                      <Page
-                        pageNumber={pageNumber}
-                        width={Math.min(windowWidth - 80, 550)}
-                        renderTextLayer={false}
-                        renderAnnotationLayer={false}
+                    <Page
+                      pageNumber={pageNumber}
+                      width={Math.min(windowWidth - 80, 550)}
+                      renderTextLayer={false}
+                      renderAnnotationLayer={false}
+                    />
+                    {/* Live preview rectangle while the user is drawing a new box on this page */}
+                    {isDrawing && currentPageRef.current === pageNumber && drawingBox && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: `${drawingBox.nx * 100}%`,
+                          top: `${drawingBox.ny * 100}%`,
+                          width: `${drawingBox.nw * 100}%`,
+                          height: `${drawingBox.nh * 100}%`,
+                          border: '2px dashed #2563eb',
+                          backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                          pointerEvents: 'none',
+                        }}
                       />
-                      {/* Live preview rectangle while the user is drawing a new box on this page */}
-                      {isDrawing && currentPageRef.current === pageNumber && drawingBox && (
+                    )}
+
+                    {/* Unified field renderer: confirmed fields have a solid border, pending AI fields have dashed */}
+                    {pageFields.map((field) => {
+                      const color       = getMarkerColor(field);
+                      const isActive    = interaction.index === field.globalIndex;
+                      const isEditing   = editingSuggestionId === field.id;
+                      const borderStyle = field.confirmed ? `2px solid ${color}` : `2px dashed ${color}`;
+
+                      return (
                         <div
-                          style={{
-                            position: 'absolute',
-                            left: `${drawingBox.nx * 100}%`,
-                            top: `${drawingBox.ny * 100}%`,
-                            width: `${drawingBox.nw * 100}%`,
-                            height: `${drawingBox.nh * 100}%`,
-                            border: '2px dashed #2563eb',
-                            backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                            pointerEvents: 'none',
+                          key={field.id}
+                          onMouseDown={(e) => e.stopPropagation()} // Prevent triggering a new draw box
+                          onPointerDown={(e) => {
+                            // Field body pointer-down starts a move interaction
+                            e.stopPropagation();
+                            e.preventDefault();
+                            setInteraction({ index: field.globalIndex, type: 'move' });
                           }}
-                        />
-                      )}
+                          style={{
+                            position:        'absolute',
+                            left:            `${field.nx * 100}%`,
+                            top:             `${field.ny * 100}%`,
+                            width:           `${field.nw * 100}%`,
+                            height:          `${field.nh * 100}%`,
+                            border:          borderStyle,
+                            backgroundColor: `${color}22`,
+                            borderRadius:    4,
+                            boxSizing:       'border-box',
+                            pointerEvents:   'all',
+                            zIndex:          10,
+                            cursor:          isActive && interaction.type === 'move' ? 'grabbing' : 'grab',
+                            color,
+                          }}
+                        >
+                          {/* Field label shown inside the box */}
+                          <span style={{
+                            position:   'absolute',
+                            bottom:     '100%',
+                            left:       0,
+                            fontSize:   '0.65rem',
+                            fontWeight: 700,
+                            color,
+                            whiteSpace: 'nowrap',
+                            lineHeight: 1.2,
+                            padding:    '1px 3px',
+                            background: 'white',
+                            borderRadius: 2,
+                            transform:  'translateY(-1px)',
+                          }}>
+                            {!field.confirmed && '🤖 '}{field.label || field.type}
+                          </span>
 
-                      {/* Unified field renderer: confirmed fields have solid border, pending AI fields have dashed */}
-                      {pageFields.map((field) => {
-                        const color       = getMarkerColor(field);
-                        const isActive    = interaction.index === field.globalIndex;
-                        const isEditing   = editingSuggestionId === field.id;
-                        const borderStyle = field.confirmed ? `2px solid ${color}` : `2px dashed ${color}`;
-
-                        return (
-                          <div
-                            key={field.id}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onPointerDown={(e) => {
-                              // Field body pointer-down starts a move interaction
-                              e.stopPropagation();
-                              e.preventDefault();
-                              setInteraction({ index: field.globalIndex, type: 'move' });
-                            }}
-                            style={{
-                              position:        'absolute',
-                              left:            `${field.nx * 100}%`,
-                              top:             `${field.ny * 100}%`,
-                              width:           `${field.nw * 100}%`,
-                              height:          `${field.nh * 100}%`,
-                              border:          borderStyle,
-                              backgroundColor: `${color}22`,
-                              borderRadius:    4,
-                              boxSizing:       'border-box',
-                              pointerEvents:   'all',
-                              zIndex:          10,
-                              cursor:          isActive && interaction.type === 'move' ? 'grabbing' : 'grab',
-                              color,
-                            }}
-                          >
-                            {/* Field label shown above the box */}
-                            <span style={{
-                              position:   'absolute',
-                              bottom:     '100%',
-                              left:       0,
-                              fontSize:   '0.65rem',
-                              fontWeight: 700,
-                              color,
-                              whiteSpace: 'nowrap',
-                              lineHeight: 1.2,
-                              padding:    '1px 3px',
-                              background: 'white',
-                              borderRadius: 2,
-                              transform:  'translateY(-1px)',
-                            }}>
-                              {!field.confirmed && '[AI] '}{field.label || field.type}
-                            </span>
-
-                            {/* Inline label editor for customText fields */}
-                            {isEditing && (
-                              <div
-                                style={{
-                                  position:   'absolute',
-                                  top:        '100%',
-                                  left:       0,
-                                  zIndex:     20,
-                                  background: 'white',
-                                  border:     '1px solid #c4b5fd',
-                                  borderRadius: 6,
-                                  padding:    '6px 8px',
-                                  boxShadow:  '0 4px 12px rgba(0,0,0,0.15)',
-                                  minWidth:   140,
-                                  display:    'flex',
-                                  gap:        4,
+                          {/* Inline label editor — shown when the pencil icon is clicked for customText fields */}
+                          {isEditing && (
+                            <div
+                              style={{
+                                position:   'absolute',
+                                top:        '100%',
+                                left:       0,
+                                zIndex:     20,
+                                background: 'white',
+                                border:     '1px solid #c4b5fd',
+                                borderRadius: 6,
+                                padding:    '6px 8px',
+                                boxShadow:  '0 4px 12px rgba(0,0,0,0.15)',
+                                minWidth:   140,
+                                display:    'flex',
+                                gap:        4,
+                              }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                autoFocus
+                                value={editingLabel}
+                                onChange={(e) => setEditingLabel(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') approveSuggestion(field.id);
+                                  if (e.key === 'Escape') setEditingSuggestionId(null);
                                 }}
-                                onMouseDown={(e) => e.stopPropagation()}
-                              >
-                                <input
-                                  autoFocus
-                                  value={editingLabel}
-                                  onChange={(e) => setEditingLabel(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') approveSuggestion(field.id);
-                                    if (e.key === 'Escape') setEditingSuggestionId(null);
-                                  }}
-                                  style={{
-                                    flex:       1,
-                                    border:     '1px solid #d1d5db',
-                                    borderRadius: 4,
-                                    padding:    '3px 6px',
-                                    fontSize:   '0.8rem',
-                                    outline:    'none',
-                                    minWidth:   0,
-                                  }}
-                                  placeholder="Field label..."
-                                />
-                                <button
-                                  onClick={() => approveSuggestion(field.id)}
-                                  style={{
-                                    background: '#7c3aed', color: 'white',
-                                    border: 'none', borderRadius: 4,
-                                    padding: '3px 7px', cursor: 'pointer', fontWeight: 700,
-                                  }}
-                                  title="Save label"
-                                >
-                                  ✓
-                                </button>
-                              </div>
-                            )}
-
-                            {/* Floating action buttons for each field */}
-                            <div style={{
-                              position:      'absolute',
-                              top:           2,
-                              right:         2,
-                              display:       'flex',
-                              gap:           3,
-                              pointerEvents: 'all',
-                            }}>
-                              {/* Approve button - only for unconfirmed AI suggestions */}
-                              {!field.confirmed && (
-                                <button
-                                  title="Approve this field"
-                                  onClick={(e) => { e.stopPropagation(); approveSuggestion(field.id); }}
-                                  onMouseDown={(e) => e.stopPropagation()}
-                                  onPointerDown={(e) => e.stopPropagation()}
-                                  style={{
-                                    width: 22, height: 22, borderRadius: 4,
-                                    border: 'none', background: '#059669',
-                                    color: 'white', fontSize: '0.75rem',
-                                    cursor: 'pointer', fontWeight: 700,
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  }}
-                                >✓</button>
-                              )}
-
-                              {/* Edit label button - only for unconfirmed customText fields */}
-                              {!field.confirmed && field.type === 'customText' && (
-                                <button
-                                  title="Edit label before approving"
-                                  onMouseDown={(e) => e.stopPropagation()}
-                                  onPointerDown={(e) => e.stopPropagation()}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingSuggestionId(isEditing ? null : field.id);
-                                    setEditingLabel(field.label);
-                                  }}
-                                  style={{
-                                    width: 22, height: 22, borderRadius: 4,
-                                    border: 'none', background: '#2563eb',
-                                    color: 'white', fontSize: '0.7rem',
-                                    cursor: 'pointer', fontWeight: 700,
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  }}
-                                >✎</button>
-                              )}
-
-                              {/* Delete button - always visible */}
+                                style={{
+                                  flex:       1,
+                                  border:     '1px solid #d1d5db',
+                                  borderRadius: 4,
+                                  padding:    '3px 6px',
+                                  fontSize:   '0.8rem',
+                                  outline:    'none',
+                                  minWidth:   0,
+                                }}
+                                placeholder="Field label…"
+                              />
                               <button
-                                title="Remove this field"
-                                onClick={(e) => { e.stopPropagation(); handleRemoveField(field.id); }}
+                                onClick={() => approveSuggestion(field.id)}
+                                style={{
+                                  background: '#7c3aed', color: 'white',
+                                  border: 'none', borderRadius: 4,
+                                  padding: '3px 7px', cursor: 'pointer', fontWeight: 700,
+                                }}
+                                title="Save label"
+                              >
+                                ✓
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Floating action bar — always visible for all fields */}
+                          <div style={{
+                            position:      'absolute',
+                            top:           2,
+                            right:         2,
+                            display:       'flex',
+                            gap:           3,
+                            pointerEvents: 'all',
+                          }}>
+                            {/* Approve button — only shown for unconfirmed AI suggestions */}
+                            {!field.confirmed && (
+                              <button
+                                title="Approve this field"
+                                onClick={(e) => { e.stopPropagation(); approveSuggestion(field.id); }}
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onPointerDown={(e) => e.stopPropagation()}
                                 style={{
                                   width: 22, height: 22, borderRadius: 4,
-                                  border: 'none', background: '#dc2626',
-                                  color: 'white', fontSize: '0.8rem',
+                                  border: 'none', background: '#059669',
+                                  color: 'white', fontSize: '0.75rem',
                                   cursor: 'pointer', fontWeight: 700,
                                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 }}
-                              >×</button>
-                            </div>
+                              >✓</button>
+                            )}
 
-                            {/* Resize handle at the bottom-right corner */}
-                            <div
-                              title="Resize this field"
+                            {/* Edit label button — only for unconfirmed customText fields */}
+                            {!field.confirmed && field.type === 'customText' && (
+                              <button
+                                title="Edit label before approving"
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingSuggestionId(isEditing ? null : field.id);
+                                  setEditingLabel(field.label);
+                                }}
+                                style={{
+                                  width: 22, height: 22, borderRadius: 4,
+                                  border: 'none', background: '#2563eb',
+                                  color: 'white', fontSize: '0.7rem',
+                                  cursor: 'pointer', fontWeight: 700,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}
+                              >✎</button>
+                            )}
+
+                            {/* Delete button — always visible for every field */}
+                            <button
+                              title="Remove this field"
+                              onClick={(e) => { e.stopPropagation(); handleRemoveField(field.id); }}
                               onMouseDown={(e) => e.stopPropagation()}
-                              onPointerDown={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                setInteraction({ index: field.globalIndex, type: 'resize' });
-                              }}
+                              onPointerDown={(e) => e.stopPropagation()}
                               style={{
-                                position:        'absolute',
-                                bottom:          0,
-                                right:           0,
-                                width:           10,
-                                height:          10,
-                                backgroundColor: color,
-                                cursor:          'nwse-resize',
-                                borderRadius:    '2px 0 0 0',
+                                width: 22, height: 22, borderRadius: 4,
+                                border: 'none', background: '#dc2626',
+                                color: 'white', fontSize: '0.8rem',
+                                cursor: 'pointer', fontWeight: 700,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
                               }}
-                            />
+                            >×</button>
                           </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </Document>
-            </div>
-          </div>
-        )}
 
-        {/* Generated link success card */}
-        {generatedLink && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="bg-emerald-50 border-b border-emerald-100 px-6 py-5 flex items-center gap-3">
-              <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center shrink-0">
-                <div className="w-5 h-5 text-emerald-600">
-                  <CheckCircle2 className="w-full h-full" />
-                </div>
-              </div>
-              <div>
-                <h3 className="font-bold text-gray-900">Document uploaded successfully</h3>
-                <p className="text-sm text-gray-500 mt-0.5">Share the link below with your signer.</p>
-              </div>
-            </div>
-            <div className="px-6 py-5">
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="text"
-                  value={generatedLink}
-                  readOnly
-                  className="flex-1 min-w-0 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 font-mono"
-                />
-                <button
-                  onClick={copyToClipboard}
-                  className={`flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-xl border transition-colors ${
-                    isCopied
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                      : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="w-4 h-4">
-                    {isCopied ? <CheckCircle2 className="w-full h-full" /> : <Copy className="w-full h-full" />}
+                          {/* Resize handle — drag the bottom-right corner to change width and height */}
+                          <div
+                            title="Resize this field"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              setInteraction({ index: field.globalIndex, type: 'resize' });
+                            }}
+                            style={{
+                              position:        'absolute',
+                              bottom:          0,
+                              right:           0,
+                              width:           10,
+                              height:          10,
+                              backgroundColor: color,
+                              cursor:          'nwse-resize',
+                              borderRadius:    '2px 0 0 0',
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
-                  {isCopied ? 'Copied!' : 'Copy Link'}
-                </button>
-                <button
-                  onClick={shareOnWhatsApp}
-                  className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-xl text-white transition-colors"
-                  style={{ backgroundColor: '#25D366' }}
-                >
-                  <div className="w-4 h-4">
-                    <MessageCircle className="w-full h-full" />
-                  </div>
-                  WhatsApp
-                </button>
-              </div>
-            </div>
+                );
+              })}
+            </Document>
           </div>
-        )}
+          
+        </div>
+      )}
 
-      </main>
-
-      {/* Sticky footer - visible while placing fields but before link is generated */}
+      {/* Sticky footer — visible while the admin is placing fields but before the link is generated */}
       {fileUrl && !generatedLink && (
-        <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 shadow-lg">
-          <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-gray-600">
-                Confirmed Fields:
-                <span className="ml-1.5 font-bold text-blue-600">
-                  {fields.filter((f) => f.confirmed).length}
-                </span>
-              </span>
+        <div className="action-footer">
+          <div className="action-footer-inner">
+            <p className="action-footer-status">
+              Confirmed Fields:{' '}
+              <span className="action-footer-count">{fields.filter((f) => f.confirmed).length}</span>
               {fields.some((f) => !f.confirmed) && (
-                <span className="px-2 py-0.5 bg-violet-100 text-violet-700 text-xs font-semibold rounded-full">
+                <span style={{
+                  marginLeft: 10,
+                  padding: '1px 8px',
+                  borderRadius: 10,
+                  background: '#ede9fe',
+                  color: '#6d28d9',
+                  fontWeight: 600,
+                  fontSize: '0.8rem',
+                }}>
                   {fields.filter((f) => !f.confirmed).length} AI pending
                 </span>
               )}
-            </div>
+            </p>
             <button
               onClick={handleUpload}
               disabled={uploading || fields.filter((f) => f.confirmed).length === 0}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50
-                         text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-sm transition-colors"
+              className="btn btn-primary"
             >
-              {uploading ? (
-                <>
-                  <div className="w-4 h-4 animate-spin">
-                    <Loader2 className="w-full h-full" />
-                  </div>
-                  Uploading...
-                </>
-              ) : (
-                <>
-                  <div className="w-4 h-4">
-                    <UploadCloud className="w-full h-full" />
-                  </div>
-                  Upload &amp; Generate Link
-                </>
-              )}
+              {uploading ? 'Uploading...' : 'Upload & Generate Link'}
             </button>
           </div>
         </div>
       )}
 
+      {generatedLink && (
+        <div className="generated-link-container">
+          <p>Your link is ready:</p>
+          <div className="link-input-group">
+            <input 
+              type="text" 
+              value={generatedLink} 
+              readOnly 
+            />
+            <button 
+              onClick={copyToClipboard} 
+              className="btn btn-success"
+            >
+              {isCopied ? 'Copied!' : 'Copy'}
+            </button>
+            <button
+              onClick={shareOnWhatsApp}
+              className="btn btn-primary"
+              style={{ backgroundColor: '#25D366' }} // WhatsApp green color
+            >
+              WhatsApp
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
