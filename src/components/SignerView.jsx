@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { storage } from '../firebase';
+import { storage, db } from '../firebase';
 import { ref, getDownloadURL } from 'firebase/storage';
+import { doc, updateDoc } from 'firebase/firestore';
 import { Document, Page, pdfjs } from 'react-pdf';
 import SignaturePad from 'react-signature-canvas';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -132,6 +133,13 @@ const SignerView = () => {
 
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Failed to sign the document.');
+
+      const documentRef = doc(db, 'documents', documentId);
+      await updateDoc(documentRef, {
+        status: 'Signed',
+        signedAt: new Date().toISOString(),
+        signedPdfUrl: result.downloadUrl
+      });
 
       setSignedPdfUrl(result.downloadUrl);
       setIsCompleted(true);
