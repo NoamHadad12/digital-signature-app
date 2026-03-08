@@ -15,7 +15,7 @@ function App() {
     <BrowserRouter>
       {/* AuthProvider sits inside BrowserRouter so Login.jsx can use useNavigate */}
       <AuthProvider>
-        <div className="app-container">
+        <div>
           <Routes>
             {/* Public route — anyone with the link can sign a document */}
             <Route path="/sign/:documentId" element={<SignerView />} />

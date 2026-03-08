@@ -32,7 +32,6 @@ import {
   getDocs,
   query,
   where,
-  orderBy,
   deleteDoc,
   updateDoc
 } from 'firebase/firestore';
@@ -147,24 +146,35 @@ export const getFilteredDocuments = async (uid, startDate, endDate) => {
 
   const docsRef = collection(db, 'documents');
 
-  // Always enforce clientId == uid — privacy by design, no exceptions
-  const constraints = [where('clientId', '==', uid)];
+  // Use only the equality filter — combining where() with orderBy() requires a
+  // composite Firestore index. To avoid the index requirement (and the silent
+  // 0-records failure it causes when the index is missing), we filter and sort
+  // entirely client-side after a single field-equality query.
+  const q = query(docsRef, where('clientId', '==', uid));
 
-  if (startDate) {
-    constraints.push(where('createdAt', '>=', new Date(startDate).toISOString()));
+  try {
+    const querySnapshot = await getDocs(q);
+    let docs = querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    // Apply optional date-range filtering client-side
+    if (startDate) {
+      const startIso = new Date(startDate).toISOString();
+      docs = docs.filter((d) => (d.createdAt || '') >= startIso);
+    }
+    if (endDate) {
+      const endBound = new Date(endDate);
+      endBound.setHours(23, 59, 59, 999);
+      const endIso = endBound.toISOString();
+      docs = docs.filter((d) => (d.createdAt || '') <= endIso);
+    }
+
+    // Sort most-recent first
+    docs.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    return docs;
+  } catch (err) {
+    console.error('[getFilteredDocuments] Firestore query failed:', err);
+    throw err;
   }
-
-  if (endDate) {
-    const endDocDate = new Date(endDate);
-    endDocDate.setHours(23, 59, 59, 999);
-    constraints.push(where('createdAt', '<=', endDocDate.toISOString()));
-  }
-
-  constraints.push(orderBy('createdAt', 'desc'));
-
-  const q = query(docsRef, ...constraints);
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
 };
 
 // ---------------------------------------------------------------------------

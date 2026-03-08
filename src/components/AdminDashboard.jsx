@@ -12,6 +12,8 @@ import {
   XCircle,
   Loader2,
   ExternalLink,
+  Copy,
+  Link2,
 } from 'lucide-react';
 import { getFilteredDocuments, deleteDocument, editDocumentName } from '../services/dbService';
 import { useAuth } from '../context/AuthContext';
@@ -131,6 +133,19 @@ export default function AdminDashboard() {
       .then(setDocuments)
       .catch((err) => { console.error(err); showToast('Error fetching documents', 'error'); })
       .finally(() => setLoading(false));
+  };
+
+  // Tracks which document's link was most recently copied (for button feedback)
+  const [copiedId, setCopiedId] = useState(null);
+
+  // Rebuilds the public signing link and copies it to the clipboard
+  const handleCopyLink = (docId) => {
+    const link = `${window.location.origin}/sign/${docId}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopiedId(docId);
+      showToast('Signing link copied!');
+      setTimeout(() => setCopiedId(null), 2500);
+    }).catch(() => showToast('Failed to copy link', 'error'));
   };
 
   // ── CRUD handlers ─────────────────────────────────────────────────────────
@@ -368,7 +383,20 @@ export default function AdminDashboard() {
                     {/* Icon action buttons */}
                     <td className="py-3.5 px-6">
                       <div className="flex items-center justify-end gap-1">
-                        {/* View signed PDF button — only shown when document is fully signed */}
+
+                        {/* Copy signing link — always available so the sender can reshare */}
+                        <button
+                          onClick={() => handleCopyLink(docObj.id)}
+                          title="Copy signing link"
+                          className={`p-2 rounded-lg transition-colors duration-150
+                            ${copiedId === docObj.id
+                              ? 'text-emerald-600 bg-emerald-50'
+                              : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                        >
+                          {copiedId === docObj.id ? <CheckCircle2 size={16} /> : <Link2 size={16} />}
+                        </button>
+
+                        {/* View signed PDF — only shown when document is fully signed */}
                         {docObj.status === 'signed' && docObj.signedPdfUrl && (
                           <a
                             href={docObj.signedPdfUrl}
@@ -382,7 +410,7 @@ export default function AdminDashboard() {
                           </a>
                         )}
 
-                        {/* Edit button */}
+                        {/* Rename document */}
                         <button
                           onClick={() => openEditModal(docObj)}
                           title="Rename document"
@@ -392,7 +420,7 @@ export default function AdminDashboard() {
                           <Pencil size={16} />
                         </button>
 
-                        {/* Delete button */}
+                        {/* Permanently delete */}
                         <button
                           onClick={() => handleDelete(docObj)}
                           title="Delete document"

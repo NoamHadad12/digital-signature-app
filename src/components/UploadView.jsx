@@ -394,24 +394,40 @@ const UploadView = () => {
   };
 
   return (
-    <div className="upload-view position-relative">
-      {/* Sign Out button — fixed to the top-right corner of the upload card */}
-      <div className="flex gap-2 absolute top-4 right-4">
-        <button
-          onClick={() => window.location.href = '/admin'}
-          className="btn btn-secondary"
-        >
-          Admin Dashboard
-        </button>
-        <button
-          onClick={logout}
-          className="btn btn-secondary signout-btn position-static"
-        >
-          Sign Out
-        </button>
-      </div>
+    <div className="min-h-screen bg-gray-50">
 
-      <h1>SignFlow</h1>
+      {/* ── Sticky top navigation header ─────────────────────────────── */}
+      <header className="bg-white border-b border-gray-200 px-6 py-3.5 flex items-center justify-between shadow-sm sticky top-0 z-30">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shrink-0">
+            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <span className="text-lg font-bold text-gray-900 tracking-tight">SignFlow</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => window.location.href = '/admin'}
+            className="text-sm font-medium text-gray-600 hover:text-blue-600 border border-gray-300
+                       hover:border-blue-400 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            Admin Dashboard
+          </button>
+          <button
+            onClick={logout}
+            className="text-sm font-medium text-gray-500 hover:text-red-600 border border-gray-300
+                       hover:border-red-300 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            Sign Out
+          </button>
+        </div>
+      </header>
+
+      {/* ── Centred content card ──────────────────────────────────────── */}
+      <div className="max-w-3xl mx-auto px-4 py-8">
+      <div className="upload-view">
       <p className="subtitle">Upload a PDF document to generate a shareable signing link.</p>
       
       <div className="drop-zone">
@@ -954,7 +970,9 @@ const UploadView = () => {
           </div>
         </div>
       )}
-    </div>
+      </div>{/* closes .upload-view */}
+      </div>{/* closes max-w-3xl wrapper */}
+    </div>{/* closes min-h-screen */}
   );
 };
 
