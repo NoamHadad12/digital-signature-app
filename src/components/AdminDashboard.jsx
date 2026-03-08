@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   Search,
   Calendar,
@@ -15,8 +15,9 @@ import {
   UploadCloud,
   LogOut,
 } from 'lucide-react';
-import { getFilteredDocuments, deleteDocument, editDocumentName } from '../services/dbService';
-import { useAuth } from '../context/AuthContext';
+import Toast from './ui/Toast';
+import StatusBadge from './ui/StatusBadge';
+import { useAdminDashboard } from '../hooks/useAdminDashboard';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -33,160 +34,30 @@ const formatDate = (iso) => {
   }).format(new Date(iso));
 };
 
-// ─── Sub-components ─────────────────────────────────────────────────────────
-
-/** Animated toast notification that slides in from the top-right */
-function Toast({ toast }) {
-  if (!toast) return null;
-  const isError = toast.type === 'error';
-  return (
-    <div
-      className={`
-        fixed top-5 right-5 z-50 flex items-center gap-3 px-5 py-3.5
-        rounded-xl shadow-2xl text-white text-sm font-medium
-        transition-all duration-300
-        ${isError ? 'bg-red-500' : 'bg-emerald-500'}
-      `}
-    >
-      {isError
-        ? <XCircle size={18} className="shrink-0" />
-        : <CheckCircle2 size={18} className="shrink-0" />}
-      {toast.message}
-    </div>
-  );
-}
-
-/** Status lifecycle badge with color-coded styling */
-function StatusBadge({ status }) {
-  const normalizedStatus = (status || 'draft').toLowerCase();
-  const config = {
-    draft:  { label: 'Draft',  cls: 'bg-gray-100 text-gray-600 ring-gray-200' },
-    sent:   { label: 'Sent',   cls: 'bg-blue-100 text-blue-700 ring-blue-200' },
-    opened: { label: 'Opened', cls: 'bg-amber-100 text-amber-700 ring-amber-200' },
-    signed: { label: 'Signed', cls: 'bg-emerald-100 text-emerald-700 ring-emerald-200' },
-  };
-  const { label, cls } = config[normalizedStatus] || config.draft;
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${cls}`}>
-      {label}
-    </span>
-  );
-}
-
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function AdminDashboard() {
-  const [documents, setDocuments] = useState([]);
-  const [loading, setLoading]     = useState(false);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate]     = useState('');
-
-  // Pull the authenticated user so we can scope all Firestore queries to their uid
-  const { currentUser, logout, userProfile } = useAuth();
-
-  // Toast state
-  const [toast, setToast] = useState(null);
-
-  // Edit-modal state
-  const [isEditing,   setIsEditing]   = useState(false);
-  const [editDocId,   setEditDocId]   = useState(null);
-  const [newFileName, setNewFileName] = useState('');
-
-  // ── Helpers ──────────────────────────────────────────────────────────────
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3500);
-  };
-
-  const fetchDocuments = async () => {
-    setLoading(true);
-    try {
-      // Always pass the current user's UID — strict tenant isolation
-      const results = await getFilteredDocuments(currentUser?.uid, startDate, endDate);
-      setDocuments(results);
-    } catch (err) {
-      console.error(err);
-      showToast('Error fetching documents', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchDocuments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── Filter handlers ───────────────────────────────────────────────────────
-
-  const handleFilter = (e) => {
-    e.preventDefault();
-    fetchDocuments();
-  };
-
-  const clearFilters = () => {
-    setStartDate('');
-    setEndDate('');
-    // Re-fetch with empty date range but keep the uid filter
-    setLoading(true);
-    getFilteredDocuments(currentUser?.uid, '', '')
-      .then(setDocuments)
-      .catch((err) => { console.error(err); showToast('Error fetching documents', 'error'); })
-      .finally(() => setLoading(false));
-  };
-
-  // Tracks which document's link was most recently copied (for button feedback)
-  const [copiedId, setCopiedId] = useState(null);
-
-  // Rebuilds the public signing link and copies it to the clipboard
-  const handleCopyLink = (docId) => {
-    const link = `${window.location.origin}/sign/${docId}`;
-    navigator.clipboard.writeText(link).then(() => {
-      setCopiedId(docId);
-      showToast('Signing link copied!');
-      setTimeout(() => setCopiedId(null), 2500);
-    }).catch(() => showToast('Failed to copy link', 'error'));
-  };
-
-  // ── CRUD handlers ─────────────────────────────────────────────────────────
-
-  const handleDelete = async (docObj) => {
-    if (!window.confirm(`Are you sure you want to permanently delete "${docObj.fileName}"?`)) return;
-    try {
-      await deleteDocument(docObj.id, docObj);
-      showToast('Document deleted successfully');
-      fetchDocuments();
-    } catch {
-      showToast('Failed to delete document', 'error');
-    }
-  };
-
-  const openEditModal = (docObj) => {
-    setEditDocId(docObj.id);
-    setNewFileName(docObj.fileName || '');
-    setIsEditing(true);
-  };
-
-  const handleEditSubmit = async () => {
-    if (!newFileName.trim()) {
-      showToast('File name cannot be empty', 'error');
-      return;
-    }
-    try {
-      await editDocumentName(editDocId, newFileName);
-      showToast('Document renamed successfully');
-      setIsEditing(false);
-      fetchDocuments();
-    } catch {
-      showToast('Failed to rename document', 'error');
-    }
-  };
-
-  // ── Render ────────────────────────────────────────────────────────────────
-
-  return (
-    <div className="min-h-screen bg-slate-50 font-sans">
+  const {
+    userProfile,
+    documents,
+    loading,
+    startDate,
+    setStartDate,
+    endDate,
+    setEndDate,
+    toast,
+    isEditing,
+    setIsEditing,
+    newFileName,
+    setNewFileName,
+    copiedId,
+    handleFilter,
+    clearFilters,
+    handleCopyLink,
+    handleDelete,
+    openEditModal,
+    handleEditSubmit
+  } = useAdminDashboard();
 
       {/* Top Navigation Bar - sticky white header */}
       <header className="flex items-center justify-end gap-4 p-4 absolute top-0 right-0 w-full z-30">
