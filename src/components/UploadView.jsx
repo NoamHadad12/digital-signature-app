@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { storage, db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -23,9 +24,9 @@ const FIELD_TYPES = [
 
 
 const UploadView = () => {
+  const navigate = useNavigate();
   // Expose auth helpers and the current user object from the auth context
-  const { logout, currentUser } = useAuth();
-
+  const { logout, currentUser, userProfile } = useAuth();
   const [file, setFile] = useState(null);
   const [fileUrl, setFileUrl] = useState(null);
   const [fileError, setFileError] = useState(''); // Validation error shown below the file input
@@ -298,7 +299,7 @@ const UploadView = () => {
     await setDoc(documentRef, {
       fileName,
       fileUrl,
-      ownerId:   currentUser.uid,
+      clientId:  currentUser.uid,
       createdAt: new Date().toISOString(),
       // Map fields to a clean schema; `label` is only included for customText fields
       fields: confirmedFields.map((field, index) => ({
@@ -381,13 +382,26 @@ const UploadView = () => {
 
   return (
     <div className="upload-view">
-      {/* Sign Out button — fixed to the top-right corner of the upload card */}
-      <button
-        onClick={logout}
-        className="btn btn-secondary signout-btn"
-      >
-        Sign Out
-      </button>
+      {/* Header controls — fixed to the top-right corner of the upload card */}
+      <div style={{ position: 'absolute', top: '16px', right: '16px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+        <span style={{ color: '#4b5563', fontWeight: 500, fontSize: '0.9rem' }} dir="rtl">
+          שלום {userProfile?.firstName || ''} {userProfile?.lastName || ''}
+        </span>
+        <button
+          onClick={() => navigate('/admin')}
+          className="btn btn-primary"
+          style={{ padding: '6px 16px', fontSize: '0.82rem', margin: 0 }}
+        >
+          Admin Dashboard
+        </button>
+        <button
+          onClick={logout}
+          className="btn btn-secondary"
+          style={{ padding: '6px 16px', fontSize: '0.82rem', margin: 0 }}
+        >
+          Sign Out
+        </button>
+      </div>
 
       <h1>SignFlow</h1>
       <p className="subtitle">Upload a PDF document to generate a shareable signing link.</p>

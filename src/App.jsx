@@ -4,7 +4,9 @@ import './App.css';
 import UploadView from './components/UploadView';
 import SignerView from './components/SignerView';
 import Login from './components/Login';
+import SignUp from './components/SignUp';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminDashboard from './components/AdminDashboard';
 // AuthProvider must wrap the entire app so every component can read auth state
 import { AuthProvider } from './context/AuthContext';
 
@@ -20,6 +22,7 @@ function App() {
 
             {/* Public route — the login page */}
             <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<SignUp />} />
 
             {/* Protected route — only noam.hadad23@gmail.com can access the upload page */}
             <Route
@@ -27,6 +30,16 @@ function App() {
               element={
                 <ProtectedRoute>
                   <UploadView />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Protected route — Admin Dashboard */}
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute>
+                  <AdminDashboard />
                 </ProtectedRoute>
               }
             />
