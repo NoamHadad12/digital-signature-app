@@ -47,6 +47,13 @@ service cloud.firestore {
       }
     }
 
+    // ── users collection ─────────────────────────────────────────────────
+    // Stores firstName, lastName, and email for each registered user.
+    // Only the owner may read or write their own profile document.
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
     // ── logs collection ───────────────────────────────────────────────────
     // Append-only audit trail. Any client may write a log entry (signers are
     // unauthenticated), but only authenticated users may read the audit log.
