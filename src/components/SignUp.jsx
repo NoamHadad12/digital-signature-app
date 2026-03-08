@@ -44,8 +44,11 @@ const SignUp = () => {
     if (password !== confirm) {
       return setError('הסיסמאות אינן תואמות.');
     }
-    if (password.length < 6) {
-      return setError('הסיסמא חייבת להכיל לפחות 6 תווים.');
+
+    // Enforce strong password: min 8 chars, at least one uppercase, one lowercase, one digit
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d\w\W]{8,}$/;
+    if (!passwordRegex.test(password)) {
+      return setError('Password must be at least 8 characters long and contain an uppercase letter, a lowercase letter, and a number.');
     }
 
     setLoading(true);
@@ -100,7 +103,7 @@ const SignUp = () => {
                 autoComplete="given-name"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
-                placeholder="John"
+                placeholder="Israel"
                 className={INPUT_CLS}
               />
             </div>
@@ -112,7 +115,7 @@ const SignUp = () => {
                 autoComplete="family-name"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
-                placeholder="Doe"
+                placeholder="Cohen"
                 className={INPUT_CLS}
               />
             </div>
@@ -126,7 +129,7 @@ const SignUp = () => {
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@company.com"
+              placeholder="israel@company.co.il"
               className={INPUT_CLS}
             />
           </div>
@@ -139,7 +142,7 @@ const SignUp = () => {
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Min. 6 characters"
+              placeholder="Min. 8 chars, 1 uppercase, 1 lowercase, 1 number"
               className={INPUT_CLS}
             />
           </div>
