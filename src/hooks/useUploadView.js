@@ -7,6 +7,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import { useWindowWidth } from '../utils/pdfHelpers';
+import { detectFieldsWithGemini } from '../services/geminiFieldDetection';
 
 export const FIELD_TYPES = [
   { key: 'signature',  label: 'Signature',     type: 'signature',  color: '#e53e3e' },
@@ -152,65 +153,24 @@ export function useUploadView() {
     setFields((prev) => prev.filter((f) => f.confirmed));
 
     try {
-      const base64Pdf = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload  = () => {
-          resolve(reader.result.split(',')[1]);
-        };
-        reader.onerror = () => reject(new Error('FileReader failed to read the PDF.'));
-        reader.readAsDataURL(file);
-      });
+      const detectedFields = await detectFieldsWithGemini(file);
 
-      const response = await fetch('/api/analyze-pdf', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ base64Pdf }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 429) {
-          throw new Error('AI Quota Reached: The free tier limit has been exceeded. Please wait about 60 seconds and try again or use a smaller document.');
-        }
-        const err = await response.json();
-        throw new Error(err.error || 'AI analysis failed.');
-      }
-
-      const { suggestions: raw } = await response.json();
-      console.log("Suggestions received:", raw);
-
-      if (!raw || raw.length === 0) {
-        showToast("The AI couldn't automatically find signature or date fields. Please add them manually.", 'info');
+      if (detectedFields.length === 0) {
+        showToast("AI couldn't find fields, please add manually.", 'info');
         return;
       }
 
-      const SAFE_WIDTH = 0.2;
-      const SAFE_HEIGHT = 0.05;
-
-      const mappedSuggestions = raw.map((s, index) => {
-        // Check if coordinates are missing or explicitly near 0/0
-        const needsOffset = !s.nx || !s.ny || (s.nx < 0.01 && s.ny < 0.01);
-        
-        return {
-          ...s,
-          id: crypto.randomUUID(),
-          confirmed: false,
-          // Apply a staircase offset (e.g., move down by 0.08 for each subsequent field)
-          nx: needsOffset ? 0.1 : s.nx,
-          ny: needsOffset ? (0.1 + (index * 0.08)) : s.ny,
-          nw: s.nw || SAFE_WIDTH,
-          nh: s.nh || SAFE_HEIGHT,
-        };
-      });
-
       setFields((prev) => [
         ...prev,
-        ...mappedSuggestions,
+        ...detectedFields,
       ]);
     } catch (error) {
       console.error('[AI] Analysis error:', error);
       const msg = error.message || '';
-      if (msg.includes('429') || /quota/i.test(msg)) {
+      if (error.status === 429 || msg.includes('429') || /quota/i.test(msg)) {
         showToast('Daily Limit Reached. The AI has reached its free-tier limit. Please wait about 60 seconds and try again.', 'error');
+      } else if (msg.includes('VITE_GEMINI_API_KEY')) {
+        showToast('Gemini is not configured yet. Add VITE_GEMINI_API_KEY and try again.', 'error');
       } else {
         showToast('Oops! We hit a small snag while trying to read your document. Please give it another try.', 'error');
       }

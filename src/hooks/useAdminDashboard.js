@@ -84,9 +84,13 @@ export function useAdminDashboard() {
 
   const handleDelete = async (docObj) => {
     const isSigned = (docObj.status || '').toLowerCase() === 'signed';
+    const isGhost = docObj._isGhost;
+
     const isConfirmed = await confirm({
-      title: isSigned ? 'Delete Signed Document' : 'Delete Document',
-      description: `Are you sure you want to permanently delete "${docObj.fileName}"?${isSigned ? '\nWARNING: This document has already been signed!' : ''}`,
+      title: isGhost ? 'Delete Ghost Record' : (isSigned ? 'Delete Signed Document' : 'Delete Document'),
+      description: isGhost
+        ? `This record appears to be corrupted or incomplete. Delete "${docObj.fileName || docObj.id}"?`
+        : `Are you sure you want to permanently delete "${docObj.fileName}"?${isSigned ? '\nWARNING: This document has already been signed!' : ''}`,
       confirmText: 'Delete',
       confirmVariant: 'danger'
     });
@@ -95,11 +99,11 @@ export function useAdminDashboard() {
     setDeletingIds(prev => new Set(prev).add(docObj.id));
     try {
       await deleteDocument(docObj.id, docObj);
-      setDocuments((prev) => prev.filter((documentItem) => documentItem.id !== docObj.id));
+      // DO NOT manually update state here — onSnapshot handles it as the single source of truth
       showToast('Document and associated files permanently deleted.');
     } catch (err) {
-      console.error(err);
-      showToast('Failed to delete document', 'error');
+      console.error('[handleDelete] Deletion failed:', err);
+      showToast(`Failed to delete document: ${err.message || 'Unknown error'}`, 'error');
     } finally {
       setDeletingIds(prev => {
         const next = new Set(prev);
@@ -131,9 +135,12 @@ export function useAdminDashboard() {
   };
 
   const handleCleanupOldDocuments = async () => {
+    // Count ghost records for the confirmation message
+    const ghostCount = documents.filter(d => d._isGhost).length;
+    
     const isConfirmed = await confirm({
-      title: 'Cleanup Old Documents',
-      description: 'Are you sure you want to permanently delete all documents older than 30 days? This action cannot be undone and will remove files from storage.',
+      title: 'Cleanup Documents',
+      description: `This will permanently delete:\n• All documents older than 30 days\n• ${ghostCount} ghost/corrupted records\n\nThis action cannot be undone.`,
       confirmText: 'Cleanup',
       confirmVariant: 'danger'
     });
@@ -147,18 +154,33 @@ export function useAdminDashboard() {
       const cutoffIso = thirtyDaysAgo.toISOString();
 
       const allDocs = await getFilteredDocuments(currentUser?.uid, '', '');
-      const oldDocs = allDocs.filter((d) => (d.createdAt || '') < cutoffIso);
+      
+      // Include both old docs AND ghost records
+      const docsToDelete = allDocs.filter((d) => 
+        (d.createdAt || '') < cutoffIso || d._isGhost
+      );
 
       let deletedCount = 0;
-      for (const docObj of oldDocs) {
-        await deleteDocument(docObj.id, docObj);
-        deletedCount++;
+      let failedCount = 0;
+      
+      for (const docObj of docsToDelete) {
+        try {
+          await deleteDocument(docObj.id, docObj);
+          deletedCount++;
+        } catch (err) {
+          console.error(`[handleCleanupOldDocuments] Failed to delete ${docObj.id}:`, err);
+          failedCount++;
+        }
       }
 
-      showToast(`Document and associated files permanently deleted. (Removed ${deletedCount} old documents)`, 'success');
+      if (failedCount > 0) {
+        showToast(`Cleanup complete: ${deletedCount} deleted, ${failedCount} failed.`, 'warning');
+      } else {
+        showToast(`Cleanup complete: removed ${deletedCount} documents.`, 'success');
+      }
     } catch (err) {
-      console.error(err);
-      showToast('Failed to cleanup old documents.', 'error');
+      console.error('[handleCleanupOldDocuments] Cleanup failed:', err);
+      showToast('Failed to cleanup documents.', 'error');
     } finally {
       setLoading(false);
     }

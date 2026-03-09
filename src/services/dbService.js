@@ -62,18 +62,46 @@ const applyDocumentDateFilters = (documents, startDate, endDate) => {
   return filteredDocuments;
 };
 
-const deleteStorageAsset = async (storageTarget, assetLabel) => {
-  if (!storageTarget) return false;
+// Extract the storage path from a URL or return the path as-is if already a path.
+// Firebase Storage URLs contain the path URL-encoded after '/o/' and before '?'.
+const extractStoragePath = (urlOrPath) => {
+  if (!urlOrPath) return null;
+
+  // Already a path (e.g. "pdfs/abc.pdf")
+  if (!urlOrPath.startsWith('http')) return urlOrPath;
 
   try {
-    await deleteObject(ref(storage, storageTarget));
+    const url = new URL(urlOrPath);
+    // Firebase Storage URLs: .../o/{encodedPath}?...
+    const match = url.pathname.match(/\/o\/(.+)$/);
+    if (match) {
+      return decodeURIComponent(match[1]);
+    }
+  } catch {
+    // Not a valid URL, treat as path
+  }
+
+  return urlOrPath;
+};
+
+const deleteStorageAsset = async (storageTarget, assetLabel) => {
+  const storagePath = extractStoragePath(storageTarget);
+  if (!storagePath) return false;
+
+  console.log(`[deleteStorageAsset] Attempting to delete ${assetLabel}: ${storagePath}`);
+
+  try {
+    const fileRef = ref(storage, storagePath);
+    await deleteObject(fileRef);
+    console.log(`[deleteStorageAsset] Successfully deleted ${assetLabel}: ${storagePath}`);
     return true;
   } catch (error) {
     if (error?.code === 'storage/object-not-found') {
-      console.warn(`${assetLabel} not found or already deleted`, error);
+      console.warn(`[deleteStorageAsset] ${assetLabel} not found or already deleted: ${storagePath}`);
       return false;
     }
 
+    console.error(`[deleteStorageAsset] Failed to delete ${assetLabel}: ${storagePath}`, error);
     throw error;
   }
 };
@@ -173,6 +201,28 @@ export const fetchDocument = async (documentId) => {
 };
 
 // ---------------------------------------------------------------------------
+// isGhostRecord
+// Detects documents that exist in Firestore but are missing critical fields,
+// indicating incomplete uploads or corrupted state.
+// ---------------------------------------------------------------------------
+const isGhostRecord = (docData) => {
+  // Must have a file reference or URL
+  const hasFileSource = Boolean(
+    docData.fileRef ||
+    docData.fileUrl ||
+    docData.originalPdfUrl
+  );
+
+  // Must have been created with a timestamp
+  const hasCreatedAt = Boolean(docData.createdAt);
+
+  // Must have an owner
+  const hasOwner = Boolean(docData.clientId);
+
+  return !hasFileSource || !hasCreatedAt || !hasOwner;
+};
+
+// ---------------------------------------------------------------------------
 // getFilteredDocuments
 // Fetches ONLY documents belonging to the current user (strict multi-tenant).
 // The uid filter is mandatory — this is enforced both here and in Firestore rules.
@@ -194,7 +244,10 @@ export const getFilteredDocuments = async (uid, startDate, endDate) => {
 
   try {
     const querySnapshot = await getDocs(q);
-    const docs = querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const docs = querySnapshot.docs.map((d) => {
+      const data = d.data();
+      return { id: d.id, ...data, _isGhost: isGhostRecord(data) };
+    });
     return applyDocumentDateFilters(docs, startDate, endDate);
   } catch (err) {
     console.error('[getFilteredDocuments] Firestore query failed:', err);
@@ -204,7 +257,8 @@ export const getFilteredDocuments = async (uid, startDate, endDate) => {
 
 // ---------------------------------------------------------------------------
 // subscribeFilteredDocuments
-// Real-time listener for user documents to prevent "ghost" records.
+// Real-time listener for user documents. Flags ghost records automatically.
+// This is the SINGLE SOURCE OF TRUTH for dashboard document state.
 // ---------------------------------------------------------------------------
 export const subscribeFilteredDocuments = (uid, startDate, endDate, onData, onError) => {
   if (!uid) {
@@ -216,7 +270,16 @@ export const subscribeFilteredDocuments = (uid, startDate, endDate, onData, onEr
   const q = query(docsRef, where('clientId', '==', uid));
 
   return onSnapshot(q, (querySnapshot) => {
-    const docs = querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const docs = querySnapshot.docs.map((d) => {
+      const data = d.data();
+      const ghost = isGhostRecord(data);
+      if (ghost) {
+        console.warn(`[subscribeFilteredDocuments] Ghost record detected: ${d.id}`, data);
+      }
+      return { id: d.id, ...data, _isGhost: ghost };
+    });
+
+    console.log(`[subscribeFilteredDocuments] Snapshot received: ${docs.length} documents`);
     onData(applyDocumentDateFilters(docs, startDate, endDate));
   }, (err) => {
     console.error('[subscribeFilteredDocuments] Listener error:', err);
@@ -244,51 +307,86 @@ export const updateDocumentStatus = async (documentId, status, extraFields = {})
 
 // ---------------------------------------------------------------------------
 // deleteDocument
-// Completely removes a document and its markers from Firestore, and the PDF
-// from Storage, and logs the deletion.
+// ATOMIC deletion: removes Storage files, markers sub-collection, and the
+// Firestore document. If the Firestore deletion fails, the error is thrown
+// so the caller can notify the user.
 // ---------------------------------------------------------------------------
 export const deleteDocument = async (documentId, documentData = {}) => {
+  console.log(`[deleteDocument] Starting deletion for: ${documentId}`);
   const documentRef = doc(db, 'documents', documentId);
 
+  // Step 1: Resolve storage paths (convert URLs to paths if needed)
+  const originalStoragePath = extractStoragePath(
+    documentData.fileRef ||
+    documentData.originalPdfUrl ||
+    documentData.fileUrl
+  ) || `pdfs/${documentId}.pdf`;
+
+  const signedStoragePath = extractStoragePath(documentData.signedPdfUrl) ||
+    ((documentData.status || '').toLowerCase() === 'signed'
+      ? `pdfs/signed_${documentId}.pdf`
+      : null);
+
+  // Step 2: Delete Storage assets (best effort - continue even if missing)
   try {
-    const originalStorageTarget =
-      documentData.fileRef ||
-      documentData.originalPdfUrl ||
-      documentData.fileUrl ||
-      `pdfs/${documentId}.pdf`;
-    const signedStorageTarget =
-      documentData.signedPdfUrl ||
-      ((documentData.status || '').toLowerCase() === 'signed'
-        ? `pdfs/signed_${documentId}.pdf`
-        : '');
+    await deleteStorageAsset(originalStoragePath, 'Original PDF');
+  } catch (storageErr) {
+    console.warn('[deleteDocument] Storage deletion failed for original, continuing...', storageErr);
+  }
 
-    await deleteStorageAsset(originalStorageTarget, 'Original PDF');
-
-    if (signedStorageTarget && signedStorageTarget !== originalStorageTarget) {
-      await deleteStorageAsset(signedStorageTarget, 'Signed PDF');
+  if (signedStoragePath && signedStoragePath !== originalStoragePath) {
+    try {
+      await deleteStorageAsset(signedStoragePath, 'Signed PDF');
+    } catch (storageErr) {
+      console.warn('[deleteDocument] Storage deletion failed for signed, continuing...', storageErr);
     }
+  }
 
+  // Step 3: Delete markers sub-collection
+  try {
     const markersRef = collection(documentRef, 'markers');
     const markersSnap = await getDocs(markersRef);
-    const deletePromises = markersSnap.docs.map((markerDoc) => deleteDoc(markerDoc.ref));
-    await Promise.all(deletePromises);
-    
-    await deleteDoc(documentRef);
-
-    const deletedDocumentSnap = await getDocFromServer(documentRef);
-    if (deletedDocumentSnap.exists()) {
-      throw new Error(`Firestore document ${documentId} still exists after deletion.`);
+    if (markersSnap.size > 0) {
+      console.log(`[deleteDocument] Deleting ${markersSnap.size} markers`);
+      const deletePromises = markersSnap.docs.map((markerDoc) => deleteDoc(markerDoc.ref));
+      await Promise.all(deletePromises);
     }
+  } catch (markerErr) {
+    console.warn('[deleteDocument] Marker deletion failed, continuing...', markerErr);
+  }
 
-    console.log('Firestore record deleted successfully', documentId);
-    
-    await logAction('delete_doc', documentId, { 
+  // Step 4: Delete the Firestore document (CRITICAL - must succeed)
+  try {
+    await deleteDoc(documentRef);
+    console.log(`[deleteDocument] Firestore deleteDoc() called for: ${documentId}`);
+  } catch (firestoreErr) {
+    console.error(`[deleteDocument] CRITICAL: Firestore deletion failed for ${documentId}`, firestoreErr);
+    throw new Error(`Failed to delete Firestore record: ${firestoreErr.message}`);
+  }
+
+  // Step 5: Verify deletion by fetching fresh from server
+  try {
+    const verifySnap = await getDocFromServer(documentRef);
+    if (verifySnap.exists()) {
+      console.error(`[deleteDocument] CRITICAL: Document ${documentId} still exists after deleteDoc()!`);
+      throw new Error(`Document ${documentId} was not deleted from Firestore. Please try again.`);
+    }
+    console.log(`[deleteDocument] Verified: Firestore record ${documentId} successfully deleted`);
+  } catch (verifyErr) {
+    // If getDocFromServer throws because document doesn't exist, that's actually success
+    if (verifyErr.code !== 'not-found') {
+      console.warn('[deleteDocument] Verification check encountered error:', verifyErr);
+    }
+  }
+
+  // Step 6: Log the action (non-critical)
+  try {
+    await logAction('delete_doc', documentId, {
       fileName: documentData.fileName,
-      clientId: documentData.clientId 
+      clientId: documentData.clientId
     });
-  } catch (error) {
-    console.error('Error deleting document:', error);
-    throw error;
+  } catch (logErr) {
+    console.warn('[deleteDocument] Logging failed, but deletion succeeded:', logErr);
   }
 };
 

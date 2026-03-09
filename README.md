@@ -70,6 +70,9 @@ VITE_FIREBASE_PROJECT_ID=your-project-id
 VITE_FIREBASE_STORAGE_BUCKET=your-project-id.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=...
 VITE_FIREBASE_APP_ID=...
+
+# Gemini Field Detection
+VITE_GEMINI_API_KEY=AIza...
 ```
 
 **4. Run the Development Server**

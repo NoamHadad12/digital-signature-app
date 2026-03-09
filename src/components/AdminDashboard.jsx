@@ -11,6 +11,7 @@ import {
   Loader2,
   Eye,
   Link2,
+  AlertTriangle,
 } from 'lucide-react';
 import StatusBadge from './ui/StatusBadge';
 import { useAdminDashboard } from '../hooks/useAdminDashboard';
@@ -229,15 +230,27 @@ export default function AdminDashboard() {
                 {!loading && documents.map((docObj) => (
                   <tr
                     key={docObj.id}
-                    className="group hover:bg-blue-50/50 transition-colors duration-100 border-b border-slate-100"
+                    className={`group transition-colors duration-100 border-b border-slate-100
+                      ${docObj._isGhost 
+                        ? 'bg-red-50/50 hover:bg-red-100/50' 
+                        : 'hover:bg-blue-50/50'}`}
                   >
                     {/* File Name with document icon */}
                     <td className="p-4 max-w-[200px] sm:max-w-[300px] md:max-w-[400px] truncate overflow-hidden whitespace-nowrap">
                       <div className="flex items-center gap-3">
-                        <div className="bg-blue-50 p-1.5 rounded-md shrink-0">
-                          <FileText size={14} className="text-blue-500" />
+                        <div className={`p-1.5 rounded-md shrink-0 ${docObj._isGhost ? 'bg-red-100' : 'bg-blue-50'}`}>
+                          {docObj._isGhost 
+                            ? <AlertTriangle size={14} className="text-red-500" />
+                            : <FileText size={14} className="text-blue-500" />}
                         </div>
-                        {docObj.signedPdfUrl ? (
+                        {docObj._isGhost ? (
+                          <span 
+                            className="text-sm font-medium text-red-600 truncate w-full cursor-default"
+                            title="Ghost record - missing files or corrupted"
+                          >
+                            {docObj.fileName || `[Corrupted: ${docObj.id.slice(0, 8)}...]`}
+                          </span>
+                        ) : docObj.signedPdfUrl ? (
                           <a 
                             href={docObj.signedPdfUrl} 
                             target="_blank" 
@@ -261,7 +274,11 @@ export default function AdminDashboard() {
 
                     {/* Lifecycle status badge */}
                     <td className="p-4">
-                      <StatusBadge status={docObj.status} />
+                      {docObj._isGhost 
+                        ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                            <AlertTriangle size={12} /> Ghost
+                          </span>
+                        : <StatusBadge status={docObj.status} />}
                     </td>
 
                     {/* Formatted date */}
