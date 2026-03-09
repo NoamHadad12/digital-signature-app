@@ -177,17 +177,27 @@ const SignerView = () => {
     ? '*'.repeat(signerPhone.length - 4) + signerPhone.slice(-4)
     : signerPhone;
 
+  // Destroy the existing reCAPTCHA verifier and wipe the DOM container so a
+  // fresh widget can be rendered without the "already been rendered" error.
+  const teardownRecaptcha = () => {
+    if (recaptchaVerifierRef.current) {
+      try { recaptchaVerifierRef.current.clear(); } catch (_) { /* ignore */ }
+      recaptchaVerifierRef.current = null;
+    }
+    const el = document.getElementById('recaptcha-container');
+    if (el) el.innerHTML = '';
+  };
+
   const handleSendCode = async () => {
     setTwoFAState('sending');
     try {
-      // Create the invisible reCAPTCHA verifier once and reuse it
-      if (!recaptchaVerifierRef.current) {
-        recaptchaVerifierRef.current = new RecaptchaVerifier(
-          auth,
-          'recaptcha-container',
-          { size: 'invisible' }
-        );
-      }
+      // Always tear down first — prevents "already been rendered" on every retry
+      teardownRecaptcha();
+      recaptchaVerifierRef.current = new RecaptchaVerifier(
+        auth,
+        'recaptcha-container',
+        { size: 'invisible' }
+      );
       const confirmation = await signInWithPhoneNumber(
         auth,
         signerPhone,
@@ -199,9 +209,7 @@ const SignerView = () => {
     } catch (err) {
       console.error('2FA send error:', err);
       showToast('שגיאה בשליחת קוד האימות. בדוק את מספר הטלפון ונסה שוב.', 'error');
-      // Clear the verifier so it can be re-created on the next attempt
-      recaptchaVerifierRef.current?.clear();
-      recaptchaVerifierRef.current = null;
+      teardownRecaptcha();
       setTwoFAState('idle');
     }
   };
@@ -393,17 +401,16 @@ const SignerView = () => {
                 onClick={handleVerifyCode}
                 disabled={twoFAState === 'verifying'}
               >
-                {twoFAState === 'verifying' ? 'מאמת...' : 'אמת קוד'}
+                {twoFAState === 'verifying' ? 'מאמת...' : 'אמת וכנס'}
               </button>
               <button
                 className="btn"
                 style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: '0.9rem' }}
                 onClick={() => {
                   setOtpCode('');
+                  // Tear down the existing verifier + DOM widget before resending
+                  teardownRecaptcha();
                   setTwoFAState('idle');
-                  // Reset verifier so a fresh one is created on retry
-                  recaptchaVerifierRef.current?.clear();
-                  recaptchaVerifierRef.current = null;
                 }}
               >
                 לא קיבלת? שלח שוב
