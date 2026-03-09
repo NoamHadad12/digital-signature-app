@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { storage, db } from '../firebase';
+import { storage, db, auth } from '../firebase';
 import { ref, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
+import { RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
 import { Document, Page, pdfjs } from 'react-pdf';
 import SignaturePad from 'react-signature-canvas';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
-import { getMarkerColor, getMarkerLabel, getMarkerKey, useWindowWidth } from '../utils/pdfHelpers';
+import { getMarkerColor, getMarkerLabel, useWindowWidth } from '../utils/pdfHelpers';
 import { fetchDocument } from '../services/dbService';
 import { useNotification } from '../context/NotificationContext';
 
@@ -16,6 +17,20 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 
 // Resolve issue with some versions of react-signature-canvas
 const SignatureCanvas = SignaturePad.default || SignaturePad;
+
+// ---------------------------------------------------------------------------
+// getInputKey
+// Returns the key used inside fieldValues for a given marker.
+// Each non-date, non-signature marker gets a UNIQUE position-based key so
+// labels never collide (important for AI-generated fields that may share a
+// label or have no label at all).
+// ---------------------------------------------------------------------------
+const getInputKey = (marker, idx) => {
+  if (!marker.type || marker.type === 'signature') return null;
+  if (marker.type === 'date') return '__date__';
+  // All other types (customText, text, legacy) get a unique slot per position.
+  return `__field_${idx}__`;
+};
 
 const SignerView = () => {
   const { documentId } = useParams();
@@ -30,14 +45,27 @@ const SignerView = () => {
   const [isSigned, setIsSigned] = useState(false);
   const [signMode, setSignMode] = useState('draw'); // 'draw' | 'upload'
   const [uploadedSignature, setUploadedSignature] = useState(null);
-  // fieldValues is keyed by getMarkerKey() — one value shared across all markers with the same key
+
+  // fieldValues stores typed text, keyed by getInputKey(marker, idx).
+  // Date fields share '__date__'; every other text field has a unique index key.
   const [fieldValues, setFieldValues] = useState({
     __date__: new Date().toLocaleDateString('en-GB'), // Pre-fill today as DD/MM/YYYY
   });
   const setFieldValue = (key, value) =>
     setFieldValues((prev) => ({ ...prev, [key]: value }));
+
   const windowWidth = useWindowWidth();
   const sigCanvas = useRef(null);
+
+  // --- 2FA state -----------------------------------------------------------
+  const [signerPhone, setSignerPhone] = useState('');
+  const [is2FARequired, setIs2FARequired] = useState(false);
+  // 'idle' | 'sending' | 'waiting' | 'verifying' | 'verified'
+  const [twoFAState, setTwoFAState] = useState('idle');
+  const [otpCode, setOtpCode] = useState('');
+  const confirmationRef = useRef(null);
+  const recaptchaVerifierRef = useRef(null);
+  // -------------------------------------------------------------------------
 
   const handleClearSignature = () => {
     if (signMode === 'draw') {
@@ -92,10 +120,17 @@ const SignerView = () => {
       if (!documentId) return;
 
       try {
-        // Load markers from Firestore via dbService (supports new sub-collection + legacy formats)
+        // Load markers and document metadata from Firestore
         const result = await fetchDocument(documentId);
         if (result) {
           setMarkers(result.markers);
+
+          // Enforce 2FA if the admin stored a signer phone number
+          const phone = result.data?.signerPhone?.trim() || '';
+          if (phone) {
+            setSignerPhone(phone);
+            setIs2FARequired(true);
+          }
         }
 
         // Fetch the PDF as a blob to avoid CORS issues with react-pdf
@@ -133,18 +168,85 @@ const SignerView = () => {
     setNumPages(numPages);
   };
 
+  // ---------------------------------------------------------------------------
+  // 2FA helpers — SMS OTP via Firebase Phone Auth + invisible reCAPTCHA
+  // ---------------------------------------------------------------------------
+
+  // Show only last 4 digits of the phone number for display
+  const maskedPhone = signerPhone.length > 4
+    ? '*'.repeat(signerPhone.length - 4) + signerPhone.slice(-4)
+    : signerPhone;
+
+  const handleSendCode = async () => {
+    setTwoFAState('sending');
+    try {
+      // Create the invisible reCAPTCHA verifier once and reuse it
+      if (!recaptchaVerifierRef.current) {
+        recaptchaVerifierRef.current = new RecaptchaVerifier(
+          auth,
+          'recaptcha-container',
+          { size: 'invisible' }
+        );
+      }
+      const confirmation = await signInWithPhoneNumber(
+        auth,
+        signerPhone,
+        recaptchaVerifierRef.current
+      );
+      confirmationRef.current = confirmation;
+      setTwoFAState('waiting');
+      showToast('קוד אימות נשלח לטלפון שלך', 'success');
+    } catch (err) {
+      console.error('2FA send error:', err);
+      showToast('שגיאה בשליחת קוד האימות. בדוק את מספר הטלפון ונסה שוב.', 'error');
+      // Clear the verifier so it can be re-created on the next attempt
+      recaptchaVerifierRef.current?.clear();
+      recaptchaVerifierRef.current = null;
+      setTwoFAState('idle');
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    if (!otpCode.trim()) {
+      showToast('יש להזין את קוד האימות', 'error');
+      return;
+    }
+    setTwoFAState('verifying');
+    try {
+      await confirmationRef.current.confirm(otpCode.trim());
+      setTwoFAState('verified');
+      showToast('האימות הושלם בהצלחה! כעת תוכל לחתום על המסמך.', 'success');
+    } catch (err) {
+      console.error('2FA verify error:', err);
+      showToast('קוד שגוי או שפג תוקפו. יש לנסות שוב.', 'error');
+      setTwoFAState('waiting');
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Field-card helpers
+  // ---------------------------------------------------------------------------
+
   // Derive which field types are required based on the loaded markers
   const hasSignature = markers.some((m) => !m.type || m.type === 'signature');
 
-  // Build a deduplicated list of text-field cards to render in the footer
-  // Each entry has: { key, label, color } — one card per unique key
+  // Build the list of text-field cards to render in the footer.
+  // IMPORTANT: Each non-signature, non-date marker gets its OWN card (keyed
+  // by position index) so AI-generated customText fields never share state,
+  // even when they carry the same label or have no label at all.
   const textCards = [];
-  const _seenKeys = new Set();
-  markers.forEach((m) => {
+  let dateCardAdded = false;
+  markers.forEach((m, idx) => {
     if (!m.type || m.type === 'signature') return;
-    const key = getMarkerKey(m);
-    if (!key || _seenKeys.has(key)) return;
-    _seenKeys.add(key);
+    if (m.type === 'date') {
+      if (!dateCardAdded) {
+        dateCardAdded = true;
+        textCards.push({ key: '__date__', label: getMarkerLabel(m), color: getMarkerColor(m) });
+      }
+      return;
+    }
+    // Every other field type (customText, text, …) → unique position-based key
+    const key = getInputKey(m, idx);
     textCards.push({ key, label: getMarkerLabel(m), color: getMarkerColor(m) });
   });
 
@@ -160,10 +262,11 @@ const SignerView = () => {
     }
     setIsSubmitting(true);
     try {
-      // Build a per-marker-index formValues map that the API expects
+      // Build a per-marker-index formValues map that the API expects.
+      // Uses getInputKey (same as the input cards) so values are always aligned.
       const formValues = {};
       markers.forEach((m, idx) => {
-        const key = getMarkerKey(m);
+        const key = getInputKey(m, idx);
         if (key) formValues[idx] = fieldValues[key] || '';
       });
 
@@ -189,7 +292,7 @@ const SignerView = () => {
       await updateDoc(documentRef, {
         status: 'Signed',
         signedAt: new Date().toISOString(),
-        signedPdfUrl: result.downloadUrl
+        signedPdfUrl: result.downloadUrl,
       });
 
       setSignedPdfUrl(result.downloadUrl);
@@ -218,6 +321,96 @@ const SignerView = () => {
         >
           Download Your Copy
         </a>
+      </div>
+    );
+  }
+
+  // 2FA gate: block access until the signer verifies their phone number
+  if (is2FARequired && twoFAState !== 'verified') {
+    return (
+      <div className="signer-view" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        {/* Invisible reCAPTCHA anchor — Firebase attaches the widget here */}
+        <div id="recaptcha-container" />
+
+        <div style={{
+          background: '#fff',
+          borderRadius: 16,
+          boxShadow: '0 4px 32px rgba(0,0,0,0.12)',
+          padding: '40px 32px',
+          maxWidth: 400,
+          width: '100%',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🔐</div>
+          <h2 style={{ marginBottom: 8, fontSize: '1.4rem', color: '#1a1a1a' }}>אימות זהות</h2>
+          <p style={{ color: '#555', marginBottom: 24, fontSize: '0.95rem' }}>
+            לצורך אבטחה, יש לאמת את מספר הטלפון שלך לפני שניתן יהיה לחתום על המסמך.
+          </p>
+
+          {(twoFAState === 'idle' || twoFAState === 'sending') ? (
+            <>
+              <p style={{ color: '#333', marginBottom: 20, fontWeight: 500 }}>
+                קוד SMS יישלח למספר: <span style={{ direction: 'ltr', display: 'inline-block' }}>{maskedPhone}</span>
+              </p>
+              <button
+                className="btn btn-primary"
+                style={{ width: '100%', padding: '12px 0', fontSize: '1rem' }}
+                onClick={handleSendCode}
+                disabled={twoFAState === 'sending'}
+              >
+                {twoFAState === 'sending' ? 'שולח...' : 'שלח קוד אימות'}
+              </button>
+            </>
+          ) : (
+            <>
+              <p style={{ color: '#333', marginBottom: 12, fontWeight: 500 }}>
+                הזן את הקוד שקיבלת ב-SMS:
+              </p>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="000000"
+                style={{
+                  width: '100%',
+                  textAlign: 'center',
+                  fontSize: '1.8rem',
+                  letterSpacing: '0.4em',
+                  padding: '10px 0',
+                  border: '2px solid #d1d5db',
+                  borderRadius: 8,
+                  marginBottom: 16,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleVerifyCode(); }}
+              />
+              <button
+                className="btn btn-success"
+                style={{ width: '100%', padding: '12px 0', fontSize: '1rem', marginBottom: 10 }}
+                onClick={handleVerifyCode}
+                disabled={twoFAState === 'verifying'}
+              >
+                {twoFAState === 'verifying' ? 'מאמת...' : 'אמת קוד'}
+              </button>
+              <button
+                className="btn"
+                style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: '0.9rem' }}
+                onClick={() => {
+                  setOtpCode('');
+                  setTwoFAState('idle');
+                  // Reset verifier so a fresh one is created on retry
+                  recaptchaVerifierRef.current?.clear();
+                  recaptchaVerifierRef.current = null;
+                }}
+              >
+                לא קיבלת? שלח שוב
+              </button>
+            </>
+          )}
+        </div>
       </div>
     );
   }
@@ -252,7 +445,8 @@ const SignerView = () => {
                   {pageMarkers.map((marker) => {
                     const isSigMarker = !marker.type || marker.type === 'signature';
                     const color = getMarkerColor(marker);
-                    const key = getMarkerKey(marker);
+                    // Use globalIdx so the key matches the fieldValues slot assigned in textCards
+                    const key = getInputKey(marker, marker.globalIdx);
                     const liveValue = key ? (fieldValues[key] || '') : '';
                     const isEmpty = !isSigMarker && !liveValue;
 

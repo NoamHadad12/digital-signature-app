@@ -98,6 +98,41 @@ export function useAdminDashboard() {
     }
   };
 
+  const handleCleanupOldDocuments = async () => {
+    const isConfirmed = await confirm({
+      title: 'Cleanup Old Documents',
+      description: 'Are you sure you want to permanently delete all documents older than 30 days? This action cannot be undone and will remove files from storage.',
+      confirmText: 'Cleanup',
+      confirmVariant: 'danger'
+    });
+    
+    if (!isConfirmed) return;
+
+    setLoading(true);
+    try {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const cutoffIso = thirtyDaysAgo.toISOString();
+
+      const allDocs = await getFilteredDocuments(currentUser?.uid, '', '');
+      const oldDocs = allDocs.filter((d) => (d.createdAt || '') < cutoffIso);
+
+      let deletedCount = 0;
+      for (const docObj of oldDocs) {
+        await deleteDocument(docObj.id, docObj);
+        deletedCount++;
+      }
+
+      showToast(`Successfully removed ${deletedCount} old document(s).`, 'success');
+      fetchDocuments();
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to cleanup old documents', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     currentUser,
     userProfile,
@@ -119,6 +154,7 @@ export function useAdminDashboard() {
     handleCopyLink,
     handleDelete,
     openEditModal,
-    handleEditSubmit
+    handleEditSubmit,
+    handleCleanupOldDocuments
   };
 }

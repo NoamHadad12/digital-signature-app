@@ -55,7 +55,8 @@ export default function AdminDashboard() {
     handleCopyLink,
     handleDelete,
     openEditModal,
-    handleEditSubmit
+    handleEditSubmit,
+    handleCleanupOldDocuments
   } = useAdminDashboard();
 
   return (
@@ -94,9 +95,19 @@ export default function AdminDashboard() {
 
         {/* ── Filter Card ──────────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6">
-          <div className="flex items-center gap-2 mb-5">
-            <SlidersHorizontal size={17} className="text-blue-600" />
-            <h2 className="text-base font-semibold text-gray-800">Filters</h2>
+          <div className="flex items-center justify-between gap-2 mb-5">
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal size={17} className="text-blue-600" />
+              <h2 className="text-base font-semibold text-gray-800">Filters</h2>
+            </div>
+            <button
+              onClick={handleCleanupOldDocuments}
+              className="flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium py-1.5 px-3 rounded-lg transition-all text-sm border border-red-200"
+              title="Delete documents older than 30 days"
+            >
+              <Trash2 size={15} />
+              Cleanup Old Documents
+            </button>
           </div>
 
           <form onSubmit={handleFilter} className="flex flex-col sm:flex-row items-end gap-4">

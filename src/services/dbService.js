@@ -210,7 +210,15 @@ export const deleteDocument = async (documentId, documentData) => {
     } catch (e) {
       console.warn('Storage file not found or already deleted', e);
     }
-    
+
+    // 1b. Attempt to delete signed PDF if it exists
+    const signedFileRef = ref(storage, `pdfs/signed_${documentId}.pdf`);
+    try {
+      await deleteObject(signedFileRef);
+    } catch {
+      // It might not exist if it was never signed, ignore
+    }
+
     // 2. Delete all associated markers in the sub-collection
     const documentRef = doc(db, 'documents', documentId);
     const markersRef = collection(documentRef, 'markers');
