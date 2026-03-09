@@ -321,6 +321,7 @@ export default function AdminDashboard() {
                         {/* Permanently delete */}
                         <button
                           onClick={() => handleDelete(docObj)}
+                          title="Permanently delete document"
                           disabled={deletingIds.has(docObj.id)}
                           className={`p-2 rounded-lg transition-colors duration-150 
                             ${deletingIds.has(docObj.id) 
@@ -332,7 +333,6 @@ export default function AdminDashboard() {
                           ) : (
                             <Trash2 size={16} />
                           )}
-                          <Trash2 size={16} />
                         </button>
                       </div>
                     </td>
