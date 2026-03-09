@@ -6,10 +6,12 @@ const OUTPUT_QUALITY = 0.95;
 const MAX_RENDER_WIDTH = 2200;
 const BASE_RENDER_SCALE = 2.4; // Ensuring clarity for thin signature lines
 
+// verticalAnchor is 0.5 so that the Gemini-detected center point maps to
+// the true visual center of the rendered field box on both axes.
 const FIELD_LAYOUT = {
-  signature: { width: 0.3, height: 0.06, verticalAnchor: 0.6 },
-  date: { width: 0.18, height: 0.045, verticalAnchor: 0.55 },
-  customText: { width: 0.24, height: 0.05, verticalAnchor: 0.55 },
+  signature: { width: 0.3, height: 0.06, verticalAnchor: 0.5 },
+  date: { width: 0.18, height: 0.045, verticalAnchor: 0.5 },
+  customText: { width: 0.24, height: 0.05, verticalAnchor: 0.5 },
 };
 
 if (!pdfjs.GlobalWorkerOptions.workerSrc) {

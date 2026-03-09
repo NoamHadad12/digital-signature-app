@@ -369,8 +369,12 @@ const UploadView = () => {
                           }}
                           style={{
                             position:        'absolute',
-                            left:            `${field.nx * 100}%`,
-                            top:             `${field.ny * 100}%`,
+                            // Position the center of the box at the detected point,
+                            // then shift back by half the element's own size so the
+                            // detected coordinate sits exactly at the box center.
+                            left:            `${(field.nx + field.nw / 2) * 100}%`,
+                            top:             `${(field.ny + field.nh / 2) * 100}%`,
+                            transform:       'translate(-50%, -50%)',
                             width:           `${field.nw * 100}%`,
                             height:          `${field.nh * 100}%`,
                             border:          borderStyle,
