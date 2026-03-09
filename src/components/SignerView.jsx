@@ -187,6 +187,11 @@ const SignerView = () => {
   // Destroy the existing reCAPTCHA verifier and wipe the DOM container so a
   // fresh widget can be rendered without the "already been rendered" error.
   const teardownRecaptcha = () => {
+    // Check if the verifier exists globally or in the ref to avoid rendering conflicts
+    if (window.recaptchaVerifier) {
+      try { window.recaptchaVerifier.clear(); } catch (e) { console.error('Error clearing global verifier', e); }
+      window.recaptchaVerifier = null;
+    }
     if (recaptchaVerifierRef.current) {
       try { recaptchaVerifierRef.current.clear(); } catch { /* ignore */ }
       recaptchaVerifierRef.current = null;
@@ -198,16 +203,34 @@ const SignerView = () => {
   const handleSendCode = async () => {
     setTwoFAState('sending');
     try {
-      // Always tear down first — prevents "already been rendered" on every retry
+      // 1. Sanitize phone number to E.164 format (e.g., +9725XXXXXXXX)
+      let formattedPhone = signerPhone.trim().replace(/\s+/g, '').replace(/-/g, '');
+      if (formattedPhone.startsWith('0')) {
+        formattedPhone = '+972' + formattedPhone.substring(1);
+      } else if (!formattedPhone.startsWith('+')) {
+        formattedPhone = '+' + formattedPhone;
+      }
+      
+      console.log("Sending SMS to:", formattedPhone);
+
+      // 2. Always tear down first — prevents "already been rendered" on every retry
       teardownRecaptcha();
-      recaptchaVerifierRef.current = new RecaptchaVerifier(
+
+      // 3. Initialize fresh Singleton instance
+      window.recaptchaVerifier = new RecaptchaVerifier(
         auth,
         'recaptcha-container',
-        { size: 'invisible' }
+        { 
+          size: 'invisible',
+          'callback': () => { /* reCAPTCHA solved */ },
+          'expired-callback': () => { teardownRecaptcha(); }
+        }
       );
+      recaptchaVerifierRef.current = window.recaptchaVerifier;
+
       const confirmation = await signInWithPhoneNumber(
         auth,
-        signerPhone,
+        formattedPhone,
         recaptchaVerifierRef.current
       );
       confirmationRef.current = confirmation;
@@ -215,7 +238,12 @@ const SignerView = () => {
       showToast('קוד אימות נשלח לטלפון שלך', 'success');
     } catch (err) {
       console.error('2FA send error:', err);
-      showToast('שגיאה בשליחת קוד האימות. בדוק את מספר הטלפון ונסה שוב.', 'error');
+      let errorMsg = 'שגיאה בשליחת קוד האימות. בדוק את מספר הטלפון ונסה שוב.';
+      
+      if (err.code === 'auth/invalid-phone-number') errorMsg = 'מספר טלפון לא תקין.';
+      if (err.code === 'auth/too-many-requests') errorMsg = 'יותר מדיי ניסיונות. נסה שוב מאוחר יותר.';
+      
+      showToast(errorMsg, 'error');
       teardownRecaptcha();
       setTwoFAState('idle');
     }
