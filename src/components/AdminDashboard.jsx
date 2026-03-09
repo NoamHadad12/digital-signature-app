@@ -59,7 +59,7 @@ export default function AdminDashboard() {
   } = useAdminDashboard();
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans">
+    <div className="min-h-screen bg-slate-50 font-sans overflow-x-hidden">
       {/* Top Navigation Bar - sticky white header */}
       <header className="flex items-center justify-end gap-4 p-4 absolute top-0 right-0 w-full z-30">
         {userProfile?.firstName && (
@@ -82,7 +82,7 @@ export default function AdminDashboard() {
       </header>
 
       {/* Page Content */}
-      <main className="max-w-[95%] mx-auto w-full bg-white rounded-2xl shadow-xl p-6 mt-16 mb-20 border border-slate-100">
+      <main className="w-full px-4 sm:px-6 lg:px-8 mx-auto bg-white rounded-2xl shadow-xl py-6 mt-16 mb-20 border border-slate-100">
 
         {/* Page Header */}
         <div className="mb-8">
@@ -222,7 +222,7 @@ export default function AdminDashboard() {
                     className="group hover:bg-blue-50/50 transition-colors duration-100 border-b border-slate-100"
                   >
                     {/* File Name with document icon */}
-                    <td className="p-4 max-w-[300px] truncate overflow-hidden whitespace-nowrap">
+                    <td className="p-4 max-w-[200px] sm:max-w-[300px] md:max-w-[400px] truncate overflow-hidden whitespace-nowrap">
                       <div className="flex items-center gap-3">
                         <div className="bg-blue-50 p-1.5 rounded-md shrink-0">
                           <FileText size={14} className="text-blue-500" />
