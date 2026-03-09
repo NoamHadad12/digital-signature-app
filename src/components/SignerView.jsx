@@ -189,12 +189,14 @@ const SignerView = () => {
     let digits = (phone || '').replace(/\D/g, '');
     if (digits.startsWith('0')) {
       digits = '972' + digits.substring(1);
+    } else if (digits.startsWith('5')) {
+      digits = '972' + digits;
     }
     return '+' + digits;
   };
 
-  // Robust singleton reCAPTCHA initialization to prevent "already rendered" errors
-  const renderRecaptcha = () => {
+  // 1. Complete Component Isolation - Nuclear Cleanup
+  const nuclearRecaptchaCleanup = () => {
     if (window.recaptchaVerifier) {
       try { window.recaptchaVerifier.clear(); } catch { /* ignore */ }
       window.recaptchaVerifier = null;
@@ -204,26 +206,38 @@ const SignerView = () => {
     }
 
     const el = document.getElementById('recaptcha-container');
-    if (el) el.innerHTML = '';
+    if (el) {
+      el.innerHTML = '';
+    }
+  };
 
-    window.recaptchaVerifier = new RecaptchaVerifier(
+  // Robust singleton reCAPTCHA initialization
+  const renderRecaptcha = () => {
+    nuclearRecaptchaCleanup();
+
+    const verifier = new RecaptchaVerifier(
       auth,
       'recaptcha-container',
       {
         size: 'invisible',
         callback: () => { /* solved */ },
         'expired-callback': () => {
-          if (window.recaptchaVerifier) {
-            try { window.recaptchaVerifier.clear(); } catch { /* ignore */ }
-            window.recaptchaVerifier = null;
-          }
+          nuclearRecaptchaCleanup();
         }
       }
     );
 
-    recaptchaVerifierRef.current = window.recaptchaVerifier;
-    return window.recaptchaVerifier;
+    window.recaptchaVerifier = verifier;
+    recaptchaVerifierRef.current = verifier;
+    return verifier;
   };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      nuclearRecaptchaCleanup();
+    };
+  }, []);
 
   const handleSendCode = async () => {
     // Atomic execution check
@@ -234,6 +248,7 @@ const SignerView = () => {
       const formattedPhone = formatPhoneNumber(signerPhone);
       console.log(`[Auth Debug] Attempting SMS to: ${formattedPhone}`);
 
+      // Ensure cleanup before EVERY attempt
       const verifier = renderRecaptcha();
 
       const confirmation = await signInWithPhoneNumber(
@@ -241,6 +256,9 @@ const SignerView = () => {
         formattedPhone,
         verifier
       );
+      
+      // Log confirmationResult to console to check for silent failures
+      console.log('[Auth Debug] confirmationResult:', confirmation);
       
       confirmationRef.current = confirmation;
       setTwoFAState('waiting');
@@ -251,17 +269,13 @@ const SignerView = () => {
       
       if (err.code === 'auth/invalid-phone-number') errorMsg = 'מספר טלפון לא תקין.';
       if (err.code === 'auth/too-many-requests') errorMsg = 'יותר מדיי ניסיונות. נסה שוב מאוחר יותר.';
+      if (err.code === 'auth/operation-not-allowed') {
+        errorMsg = 'Check Firebase Console -> Auth -> Settings -> SMS Region Policy';
+      }
       
       showToast(errorMsg, 'error');
       
-      // Cleanup to allow immediate retry
-      if (window.recaptchaVerifier) {
-        try { window.recaptchaVerifier.clear(); } catch { /* ignore */ }
-        window.recaptchaVerifier = null;
-      }
-      const el = document.getElementById('recaptcha-container');
-      if (el) el.innerHTML = '';
-
+      nuclearRecaptchaCleanup();
       setTwoFAState('idle');
     }
   };
@@ -482,14 +496,7 @@ const SignerView = () => {
                 style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: '0.9rem' }}
                 onClick={() => {
                   setOtpCode('');
-                  // Tear down the existing verifier + DOM widget before resending
-                  if (window.recaptchaVerifier) {
-                    try { window.recaptchaVerifier.clear(); } catch { /* ignore */ }
-                    window.recaptchaVerifier = null;
-                  }
-                  const el = document.getElementById('recaptcha-container');
-                  if (el) el.innerHTML = '';
-                  
+                  nuclearRecaptchaCleanup();
                   setTwoFAState('idle');
                 }}
               >
