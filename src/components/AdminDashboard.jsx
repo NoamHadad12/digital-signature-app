@@ -82,7 +82,7 @@ export default function AdminDashboard() {
       </header>
 
       {/* Page Content */}
-      <main className="max-w-7xl mx-auto w-full bg-white rounded-2xl shadow-xl p-6 mt-4 border border-slate-100 relative top-12">
+      <main className="max-w-[95%] mx-auto w-full bg-white rounded-2xl shadow-xl p-6 mt-16 mb-20 border border-slate-100">
 
         {/* Page Header */}
         <div className="mb-8">
@@ -222,7 +222,7 @@ export default function AdminDashboard() {
                     className="group hover:bg-blue-50/50 transition-colors duration-100 border-b border-slate-100"
                   >
                     {/* File Name with document icon */}
-                    <td className="p-4 w-1/3">
+                    <td className="p-4 max-w-[300px] truncate overflow-hidden whitespace-nowrap">
                       <div className="flex items-center gap-3">
                         <div className="bg-blue-50 p-1.5 rounded-md shrink-0">
                           <FileText size={14} className="text-blue-500" />
@@ -232,14 +232,14 @@ export default function AdminDashboard() {
                             href={docObj.signedPdfUrl} 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline truncate max-w-md lg:max-w-lg cursor-pointer"
+                            className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline truncate w-full cursor-pointer"
                             title={docObj.fileName}
                           >
                             {docObj.fileName}
                           </a>
                         ) : (
                           <span 
-                            className="text-sm font-medium text-gray-800 truncate max-w-md lg:max-w-lg cursor-default"
+                            className="text-sm font-medium text-gray-800 truncate w-full cursor-default"
                             title={docObj.fileName}
                           >
                             {docObj.fileName}
