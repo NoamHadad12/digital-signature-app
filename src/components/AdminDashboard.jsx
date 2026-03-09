@@ -10,7 +10,7 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
-  ExternalLink,
+  Eye,
   Link2,
   UploadCloud,
   LogOut,
@@ -281,7 +281,7 @@ export default function AdminDashboard() {
                             title="View signed PDF"
                             className="p-2 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors duration-150 flex items-center justify-center"
                           >
-                            <ExternalLink size={16} />
+                            <Eye size={16} />
                           </a>
                         ) : (
                           <button

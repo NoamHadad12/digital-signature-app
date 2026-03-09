@@ -207,7 +207,8 @@ const SignerView = () => {
 
     const el = document.getElementById('recaptcha-container');
     if (el) {
-      el.innerHTML = '';
+      const clone = el.cloneNode(false);
+      el.parentNode.replaceChild(clone, el);
     }
   };
 
@@ -364,7 +365,7 @@ const SignerView = () => {
 
       const documentRef = doc(db, 'documents', documentId);
       await updateDoc(documentRef, {
-        status: 'Signed',
+        status: 'signed',
         signedAt: new Date().toISOString(),
         signedPdfUrl: result.downloadUrl,
       });
@@ -372,19 +373,6 @@ const SignerView = () => {
       setSignedPdfUrl(result.downloadUrl);
       setIsCompleted(true);
       showToast("Document signed successfully!", "success");
-
-      // Anonymize Signer: Delete the temporary Firebase User record used for 2FA.
-      // This protects signer privacy by removing their phone number from the Auth list.
-      const user = auth.currentUser;
-      if (user) {
-        try {
-          await user.delete();
-        } catch (authErr) {
-          // If the session expired or re-auth is needed, we log it and move on.
-          // We don't want to block the success screen if deletion fails.
-          console.warn('Signer anonymization (user deletion) failed:', authErr);
-        }
-      }
     } catch (error) {
       console.error('Error during the signing process:', error);
       showToast(`An error occurred: ${error.message}`, "error");
@@ -419,7 +407,7 @@ const SignerView = () => {
     return (
       <div className="success-screen">
         <h1>🔒 Link No Longer Active</h1>
-        <p>This document has already been signed. The signing link is single-use and is no longer valid.</p>
+        <p>This document has already been completed. Thank you!</p>
       </div>
     );
   }
