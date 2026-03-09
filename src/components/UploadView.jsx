@@ -58,25 +58,33 @@ const UploadView = () => {
 
   return (
     <div className="upload-view">
-      {/* Header controls — fixed to the top-right corner of the upload card */}
-      <div style={{ position: 'absolute', top: '16px', right: '16px', display: 'flex', alignItems: 'center', gap: '15px' }}>
-        <span style={{ color: '#4b5563', fontWeight: 500, fontSize: '0.9rem' }} dir="rtl">
+      {/* Header bar — spans full width, greeting on the left, action buttons on the right */}
+      <div
+        className="flex items-center justify-between"
+        style={{ position: 'absolute', top: '16px', left: '16px', right: '16px' }}
+      >
+        {/* Greeting — top-left */}
+        <span className="text-slate-600 font-semibold text-sm">
           {userProfile?.firstName ? `Hello ${userProfile.firstName}` : ''}
         </span>
-        <button
-          onClick={() => navigate('/admin')}
-          className="btn btn-primary"
-          style={{ padding: '6px 16px', fontSize: '0.82rem', margin: 0 }}
-        >
-          Admin Dashboard
-        </button>
-        <button
-          onClick={logout}
-          className="btn btn-secondary"
-          style={{ padding: '6px 16px', fontSize: '0.82rem', margin: 0 }}
-        >
-          Sign Out
-        </button>
+
+        {/* Action buttons — top-right */}
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate('/admin')}
+            className="btn btn-primary"
+            style={{ padding: '6px 16px', fontSize: '0.82rem', margin: 0 }}
+          >
+            Admin Dashboard
+          </button>
+          <button
+            onClick={logout}
+            className="btn btn-secondary"
+            style={{ padding: '6px 16px', fontSize: '0.82rem', margin: 0 }}
+          >
+            Sign Out
+          </button>
+        </div>
       </div>
 
       <h1>SignFlow</h1>

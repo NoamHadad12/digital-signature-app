@@ -184,7 +184,7 @@ export default function AdminDashboard() {
                   <th className="sticky top-0 p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
                     Created At
                   </th>
-                  <th className="sticky top-0 p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right whitespace-nowrap">
+                  <th className="sticky top-0 right-0 p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right whitespace-nowrap bg-slate-50 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.05)] z-20">
                     Actions
                   </th>
                 </tr>
@@ -260,7 +260,7 @@ export default function AdminDashboard() {
                     </td>
 
                     {/* Icon action buttons */}
-                    <td className="p-4">
+                    <td className="p-4 sticky right-0 bg-white group-hover:bg-[#f3f8fe] shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.05)] z-10">
                       <div className="flex items-center justify-end gap-1">
 
                         {((docObj.status || '').toLowerCase() === 'signed' && docObj.signedPdfUrl) ? (
