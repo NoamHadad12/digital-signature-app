@@ -125,19 +125,13 @@ const renderPdfPagesToImages = async (file) => {
 };
 
 const requestPageSuggestions = async ({ imageBase64, mimeType, pageNumber }) => {
-  let response;
-  try {
-    response = await fetch(ANALYZE_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ imageBase64, mimeType, pageNumber }),
-    });
-  } catch (err) {
-    console.error(`[geminiFieldDetection] Network error: ${err.message}`);
-    return []; // Fallback to "AI couldn't find fields" on complete failure
-  }
+  const response = await fetch(ANALYZE_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ imageBase64, mimeType, pageNumber }),
+  });
 
   let payload = null;
   try {
@@ -147,7 +141,7 @@ const requestPageSuggestions = async ({ imageBase64, mimeType, pageNumber }) => 
   }
 
   if (!response.ok) {
-    if (response.status === 404 || response.status === 400 || response.status === 500) {
+    if (response.status === 404 || response.status === 400) {
       console.warn(`[geminiFieldDetection] AI analysis returned ${response.status}: ${payload?.error || 'Unknown error'}`);
       return []; // Return empty array to trigger "AI couldn't find fields" toast
     }
