@@ -50,13 +50,16 @@ export default function AdminDashboard() {
     newFileName,
     setNewFileName,
     copiedId,
+    deletingIds,
     handleFilter,
     clearFilters,
+    handleActionPreCheck,
     handleCopyLink,
     handleDelete,
     openEditModal,
     handleEditSubmit,
-    handleCleanupOldDocuments
+    handleCleanupOldDocuments,
+    handleCleanupZombies
   } = useAdminDashboard();
 
   return (
@@ -68,6 +71,13 @@ export default function AdminDashboard() {
             {userProfile?.firstName ? `Hello ${userProfile.firstName}` : ''}
           </span>
         )}
+        <button
+          onClick={handleCleanupZombies}
+          className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-lg transition-all text-sm"
+          title="Delete DB records where the file is missing in Storage"
+        >
+          Cleanup Missing Files
+        </button>
         <button
           onClick={() => (window.location.href = '/')}
           className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-all text-sm"
@@ -243,6 +253,7 @@ export default function AdminDashboard() {
                             href={docObj.signedPdfUrl} 
                             target="_blank" 
                             rel="noopener noreferrer"
+                            onClick={(e) => handleActionPreCheck(e, docObj.id)}
                             className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline truncate w-full cursor-pointer"
                             title={docObj.fileName}
                           >
@@ -277,6 +288,7 @@ export default function AdminDashboard() {
                           <a
                             href={docObj.signedPdfUrl}
                             target="_blank"
+                            onClick={(e) => handleActionPreCheck(e, docObj.id)}
                             rel="noopener noreferrer"
                             title="View signed PDF"
                             className="p-2 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors duration-150 flex items-center justify-center"
@@ -309,10 +321,17 @@ export default function AdminDashboard() {
                         {/* Permanently delete */}
                         <button
                           onClick={() => handleDelete(docObj)}
-                          title="Delete document"
-                          className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50
-                                     transition-colors duration-150"
+                          disabled={deletingIds.has(docObj.id)}
+                          className={`p-2 rounded-lg transition-colors duration-150 
+                            ${deletingIds.has(docObj.id) 
+                              ? 'text-gray-300 cursor-not-allowed' 
+                              : 'text-gray-400 hover:text-red-600 hover:bg-red-50'}`}
                         >
+                          {deletingIds.has(docObj.id) ? (
+                            <Loader2 size={16} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={16} />
+                          )}
                           <Trash2 size={16} />
                         </button>
                       </div>

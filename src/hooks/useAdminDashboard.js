@@ -1,53 +1,84 @@
 import { useState, useEffect } from 'react';
-import { getFilteredDocuments, deleteDocument, editDocumentName } from '../services/dbService';
+import { subscribeFilteredDocuments, getFilteredDocuments, editDocumentName, cleanupZombieRecords } from '../services/dbService';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
+
+import { storage, db } from '../firebase';
+import { ref, deleteObject } from 'firebase/storage';
+import { doc, deleteDoc as firestoreDeleteDoc } from 'firebase/firestore';
 
 export function useAdminDashboard() {
   const { currentUser, logout, userProfile } = useAuth();
   const { showToast, confirm } = useNotification();
 
+  // Polyfill wrapper for backward compatibility with requested syntax
+  const firebase = {
+    storage: () => ({
+      refFromURL: (url) => ({
+        delete: () => deleteObject(ref(storage, url))
+      })
+    })
+  };
+
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading]     = useState(false);
+  
+  // These are the inputs in the UI
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate]     = useState('');
+
+  // These are the currently applied filters for the subscription
+  const [appliedFilters, setAppliedFilters] = useState({ start: '', end: '' });
 
   const [isEditing, setIsEditing] = useState(false);
   const [editDocId, setEditDocId] = useState(null);
   const [newFileName, setNewFileName] = useState('');
   const [copiedId, setCopiedId] = useState(null);
-
-  const fetchDocuments = async () => {
-    setLoading(true);
-    try {
-      const results = await getFilteredDocuments(currentUser?.uid, startDate, endDate);
-      setDocuments(results);
-    } catch (err) {
-      console.error(err);
-      showToast('Error fetching documents', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
+  
+  // Track deleting documents for loading spinner
+  const [deletingIds, setDeletingIds] = useState(new Set());
 
   useEffect(() => {
-    fetchDocuments();
+    if (!currentUser?.uid) return;
+    setLoading(true);
+    
+    // Subscribe to real-time updates
+    const unsubscribe = subscribeFilteredDocuments(
+      currentUser.uid,
+      appliedFilters.start,
+      appliedFilters.end,
+      (docs) => {
+        setDocuments(docs);
+        setLoading(false);
+      },
+      (err) => {
+        console.error(err);
+        showToast('Error syncing documents', 'error');
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [currentUser?.uid, appliedFilters]);
 
   const handleFilter = (e) => {
     e.preventDefault();
-    fetchDocuments();
+    setAppliedFilters({ start: startDate, end: endDate });
   };
 
   const clearFilters = () => {
     setStartDate('');
     setEndDate('');
-    setLoading(true);
-    getFilteredDocuments(currentUser?.uid, '', '')
-      .then(setDocuments)
-      .catch((err) => { console.error(err); showToast('Error fetching documents', 'error'); })
-      .finally(() => setLoading(false));
+    setAppliedFilters({ start: '', end: '' });
+  };
+
+  const handleActionPreCheck = async (e, docId) => {
+    const docExists = documents.find(d => d.id === docId);
+    if (!docExists || !docExists.signedPdfUrl) {
+      e.preventDefault();
+      showToast('Document no longer exists', 'error');
+    }
   };
 
   const handleCopyLink = (docId) => {
@@ -60,20 +91,51 @@ export function useAdminDashboard() {
   };
 
   const handleDelete = async (docObj) => {
+    const isSigned = (docObj.status || '').toLowerCase() === 'signed';
     const isConfirmed = await confirm({
-      title: 'Delete Document',
-      description: `Are you sure you want to permanently delete "${docObj.fileName}"?`,
+      title: isSigned ? 'Delete Signed Document' : 'Delete Document',
+      description: `Are you sure you want to permanently delete "${docObj.fileName}"?${isSigned ? '\nWARNING: This document has already been signed!' : ''}`,
       confirmText: 'Delete',
       confirmVariant: 'danger'
     });
     if (!isConfirmed) return;
 
+    setDeletingIds(prev => new Set(prev).add(docObj.id));
     try {
-      await deleteDocument(docObj.id, docObj);
-      showToast('Document deleted successfully');
-      fetchDocuments();
-    } catch {
+      // Step 1: Storage Cleanup. Identify and delete:
+      // - The original PDF file from Firebase Storage.
+      // - The signed PDF file (if it exists) from Firebase Storage.
+      if (docObj.fileUrl) {
+        try {
+          await firebase.storage().refFromURL(docObj.fileUrl).delete();
+        } catch (e) {
+          console.warn('Original storage file not found or already deleted', e);
+        }
+      }
+      
+      if (docObj.signedPdfUrl) {
+        try {
+          await firebase.storage().refFromURL(docObj.signedPdfUrl).delete();
+        } catch (e) {
+          console.warn('Signed storage file not found or already deleted', e);
+        }
+      }
+
+      // Step 2: Firestore Cleanup
+      // Only after the files are removed (or if they don't exist), call deleteDoc() to remove the document metadata from the documents collection.
+      const docRef = doc(db, 'documents', docObj.id);
+      await firestoreDeleteDoc(docRef);
+
+      showToast('Document and associated files permanently deleted.');
+    } catch (err) {
+      console.error(err);
       showToast('Failed to delete document', 'error');
+    } finally {
+      setDeletingIds(prev => {
+        const next = new Set(prev);
+        next.delete(docObj.id);
+        return next;
+      });
     }
   };
 
@@ -92,7 +154,7 @@ export function useAdminDashboard() {
       await editDocumentName(editDocId, newFileName);
       showToast('Document renamed successfully');
       setIsEditing(false);
-      fetchDocuments();
+      // No need to fetchDocuments(), managed by onSnapshot
     } catch {
       showToast('Failed to rename document', 'error');
     }
@@ -119,15 +181,43 @@ export function useAdminDashboard() {
 
       let deletedCount = 0;
       for (const docObj of oldDocs) {
-        await deleteDocument(docObj.id, docObj);
+        // Step 1: Storage Cleanup. Identify and delete:
+        // - The original PDF file from Firebase Storage.
+        // - The signed PDF file (if it exists) from Firebase Storage.
+        if (docObj.fileUrl) {
+          try {
+            await firebase.storage().refFromURL(docObj.fileUrl).delete();
+          } catch (e) {
+            console.warn('Original storage file not found or already deleted', e);
+          }
+        }
+        
+        if (docObj.signedPdfUrl) {
+          try {
+            await firebase.storage().refFromURL(docObj.signedPdfUrl).delete();
+          } catch (e) {
+            console.warn('Signed storage file not found or already deleted', e);
+          }
+        }
+
+        // Step 2: Firestore Cleanup
+        // Only after the files are removed (or if they don't exist), call deleteDoc() to remove the document metadata from the documents collection.
+        const docRef = doc(db, 'documents', docObj.id);
+        await firestoreDeleteDoc(docRef);
+
         deletedCount++;
       }
 
-      showToast(`Successfully removed ${deletedCount} old document(s).`, 'success');
-      fetchDocuments();
+      showToast(`Document and associated files permanently deleted. (Removed ${deletedCount} old documents)`, 'success');
+      const count = await cleanupZombieRecords();
+      if (count > 0) {
+        showToast(`Successfully removed ${count} zombie record(s).`, 'success');
+      } else {
+        showToast('No missing files found! Your database is clean.', 'success');
+      }
     } catch (err) {
       console.error(err);
-      showToast('Failed to cleanup old documents', 'error');
+      showToast('Failed to cleanup zombie records.', 'error');
     } finally {
       setLoading(false);
     }
@@ -149,8 +239,10 @@ export function useAdminDashboard() {
     newFileName,
     setNewFileName,
     copiedId,
+    deletingIds,
     handleFilter,
     clearFilters,
+    handleActionPreCheck,
     handleCopyLink,
     handleDelete,
     openEditModal,

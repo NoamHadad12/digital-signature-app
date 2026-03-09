@@ -42,6 +42,7 @@ const SignerView = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [isAlreadySigned, setIsAlreadySigned] = useState(false);
+  const [missingFile, setMissingFile] = useState(false);
   const [signedPdfUrl, setSignedPdfUrl] = useState('');
   const [isSigned, setIsSigned] = useState(false);
   const [signMode, setSignMode] = useState('draw'); // 'draw' | 'upload'
@@ -158,6 +159,9 @@ const SignerView = () => {
 
       } catch (error) {
         console.error('Error fetching document:', error);
+        if (error?.code === 'storage/object-not-found') {
+          setMissingFile(true);
+        }
       }
     };
 
@@ -383,6 +387,22 @@ const SignerView = () => {
 
   // Centralized render router so we can ensure recaptcha-container is unconditionally present
   const renderContent = () => {
+  // Missing file guard: link exists in DB but original file is removed
+  if (missingFile) {
+    return (
+      <div className="success-screen">
+        <div style={{ color: '#ef4444', marginBottom: '1rem' }}>
+          <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+          </svg>
+        </div>
+        <h1 style={{ color: '#ef4444' }}>File Missing</h1>
+        <p>The document you are looking for has been removed from the server.</p>
+        <p>Please contact the sender if you need a new copy.</p>
+      </div>
+    );
+  }
+
   // Success screen view
   if (isCompleted) {
     return (

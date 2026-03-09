@@ -33,9 +33,10 @@ import {
   query,
   where,
   deleteDoc,
-  updateDoc
+  updateDoc,
+  onSnapshot
 } from 'firebase/firestore';
-import { ref, deleteObject } from 'firebase/storage';
+import { ref, deleteObject, getDownloadURL } from 'firebase/storage';
 import { logAction } from '../utils/logger';
 
 // ---------------------------------------------------------------------------
@@ -178,6 +179,44 @@ export const getFilteredDocuments = async (uid, startDate, endDate) => {
 };
 
 // ---------------------------------------------------------------------------
+// subscribeFilteredDocuments
+// Real-time listener for user documents to prevent "ghost" records.
+// ---------------------------------------------------------------------------
+export const subscribeFilteredDocuments = (uid, startDate, endDate, onData, onError) => {
+  if (!uid) {
+    onData([]);
+    return () => {};
+  }
+
+  const docsRef = collection(db, 'documents');
+  const q = query(docsRef, where('clientId', '==', uid));
+
+  return onSnapshot(q, (querySnapshot) => {
+    let docs = querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    // Apply optional date-range filtering client-side
+    if (startDate) {
+      const startIso = new Date(startDate).toISOString();
+      docs = docs.filter((d) => (d.createdAt || '') >= startIso);
+    }
+    if (endDate) {
+      const endBound = new Date(endDate);
+      endBound.setHours(23, 59, 59, 999);
+      const endIso = endBound.toISOString();
+      docs = docs.filter((d) => (d.createdAt || '') <= endIso);
+    }
+
+    // Sort most-recent first
+    docs.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    
+    onData(docs);
+  }, (err) => {
+    console.error('[subscribeFilteredDocuments] Listener error:', err);
+    if (onError) onError(err);
+  });
+};
+
+// ---------------------------------------------------------------------------
 // updateDocumentStatus
 // Updates the lifecycle status of a document in Firestore.
 // Also accepts optional extra fields (e.g. signedPdfUrl) to merge in the same write.
@@ -256,6 +295,44 @@ export const editDocumentName = async (documentId, newFileName) => {
     });
   } catch (error) {
     console.error('Error editing document name:', error);
+    throw error;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// cleanupZombieRecords
+// Iterates through the database records and deletes any document that no longer
+// has a corresponding file in Firebase Storage.
+// ---------------------------------------------------------------------------
+export const cleanupZombieRecords = async () => {
+  try {
+    console.log('Starting cleanup of zombie records...');
+    const docsRef = collection(db, 'documents');
+    const querySnapshot = await getDocs(docsRef);
+    let deletedCount = 0;
+
+    for (const documentDoc of querySnapshot.docs) {
+      const data = documentDoc.data();
+      const storagePath = data.fileRef || `pdfs/${documentDoc.id}.pdf`;
+      const fileRef = ref(storage, storagePath);
+      
+      try {
+        // In the client SDK, the most reliable way to check existence is fetching the URL
+        await getDownloadURL(fileRef);
+      } catch (error) {
+        if (error.code === 'storage/object-not-found') {
+          console.warn(`Zombie record found! Doc ID: ${documentDoc.id}. Deleting...`);
+          // We found a zombie record, reuse deleteDocument to clean it out safely
+          await deleteDocument(documentDoc.id, data);
+          deletedCount++;
+        }
+      }
+    }
+    
+    console.log(`Cleanup complete. Deleted ${deletedCount} zombie records.`);
+    return deletedCount;
+  } catch (error) {
+    console.error('Error during cleanup:', error);
     throw error;
   }
 };
