@@ -1,8 +1,5 @@
 import { useState, useEffect } from 'react';
-import { subscribeFilteredDocuments, editDocumentName } from '../services/dbService';
-import { doc, deleteDoc } from 'firebase/firestore';
-import { ref, deleteObject } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { subscribeFilteredDocuments, deleteDocument, editDocumentName } from '../services/dbService';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 
@@ -101,46 +98,10 @@ export function useAdminDashboard() {
 
     setDeletingIds(prev => new Set(prev).add(docObj.id));
     try {
-      // 1. Extract storage paths
-      const extractStoragePath = (urlOrPath) => {
-        if (!urlOrPath) return null;
-        if (!urlOrPath.startsWith('http')) return urlOrPath;
-        try {
-          const url = new URL(urlOrPath);
-          const match = url.pathname.match(/\/o\/(.+)$/);
-          if (match) return decodeURIComponent(match[1]);
-        } catch {
-          // ignore parsing errors
-        }
-        return urlOrPath;
-      };
-
-      const originalStoragePath = extractStoragePath(
-        docObj.fileRef || docObj.originalPdfUrl || docObj.fileUrl
-      ) || `pdfs/${docObj.id}.pdf`;
-
-      const signedStoragePath = extractStoragePath(docObj.signedPdfUrl) ||
-        ((docObj.status || '').toLowerCase() === 'signed' ? `pdfs/signed_${docObj.id}.pdf` : null);
-
-      // 2. Best effort to delete from Storage (do not block Firestore deletion if this fails e.g 404)
-      if (originalStoragePath) {
-        try {
-          await deleteObject(ref(storage, originalStoragePath));
-        } catch (err) {
-          console.warn('Storage file missing, proceeding to DB cleanup', err);
-        }
-      }
-
-      if (signedStoragePath && signedStoragePath !== originalStoragePath) {
-        try {
-          await deleteObject(ref(storage, signedStoragePath));
-        } catch (err) {
-          console.warn('Storage file missing, proceeding to DB cleanup', err);
-        }
-      }
-
-      // 3. Atomically delete the Firestore document (The single source of truth)
-      await deleteDoc(doc(db, 'documents', docObj.id));
+      // Block 1 (Storage): Best-effort deletion — a 404 is logged and skipped.
+      // Block 2 (Firestore): deleteDocument guarantees the record is removed even
+      // if Block 1 failed, so the ghost row vanishes from the onSnapshot listener.
+      await deleteDocument(docObj.id, docObj);
 
       showToast('Document and associated files permanently deleted.');
     } catch (err) {

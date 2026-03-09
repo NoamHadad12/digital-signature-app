@@ -14,7 +14,7 @@ export const maxDuration = 60;
 
 const MODEL_NAME = 'gemini-1.5-flash';
 
-const ANALYSIS_PROMPT = "Find any line that looks like it needs a signature or a date. Return ONLY a raw JSON array of objects: { 'type': 'signature' | 'date', 'x': number, 'y': number }. No markdown, no backticks, no conversational text. Set x and y to the center point of the fillable area as percentages from 0 to 100. If you return values from 0 to 1000, ensure they are divided by 10 so they represent a percentage (0 to 100).";
+const ANALYSIS_PROMPT = "You are a document parser. Return ONLY a JSON array of objects: { 'type': 'signature' | 'date', 'label': string, 'x': number, 'y': number }. Identify lines near 'Signature' and 'Date' labels. Set x and y to the center point of the fillable area as percentages from 0 to 100. Gemini Vision coordinates are in the 0-1000 range — divide them by 10 to convert to percentages.";
 
 const parsePercent = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -128,7 +128,9 @@ async function callGemini({ imageBase64, mimeType, pageNumber }) {
       },
     ]);
 
-    return parseGeminiJson(result.response.text());
+    const rawText = result.response.text();
+    console.log('[AI Raw Response]', rawText);
+    return parseGeminiJson(rawText);
   } catch (error) {
     console.warn(`[analyze-pdf] Gemini API error: ${error.message}`);
     // If ModelNotSupported or 404 is thrown, return empty array to trigger client fallback

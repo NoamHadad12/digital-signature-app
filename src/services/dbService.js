@@ -273,20 +273,20 @@ export const subscribeFilteredDocuments = (uid, startDate, endDate, onData, onEr
   const q = query(docsRef, where('clientId', '==', uid));
 
   return onSnapshot(q, (querySnapshot) => {
-    const validDocs = [];
+    const allDocs = [];
     querySnapshot.docs.forEach((d) => {
       const data = d.data();
       const ghost = isGhostRecord(data);
       if (ghost) {
-        console.warn(`[subscribeFilteredDocuments] Ghost record detected and filtered out: ${d.id}`, data);
-        // Do not add ghost records to the UI
-      } else {
-        validDocs.push({ id: d.id, ...data, _isGhost: false });
+        // Include ghost records so users can see and hard-delete them.
+        // The onSnapshot listener will remove the row the instant deleteDoc() completes.
+        console.warn(`[subscribeFilteredDocuments] Ghost record detected: ${d.id}`, data);
       }
+      allDocs.push({ id: d.id, ...data, _isGhost: ghost });
     });
 
-    console.log(`[subscribeFilteredDocuments] Snapshot received: ${validDocs.length} valid documents`);
-    onData(applyDocumentDateFilters(validDocs, startDate, endDate));
+    console.log(`[subscribeFilteredDocuments] Snapshot received: ${allDocs.length} documents (${allDocs.filter(d => d._isGhost).length} ghost)`);
+    onData(applyDocumentDateFilters(allDocs, startDate, endDate));
   }, (err) => {
     console.error('[subscribeFilteredDocuments] Listener error:', err);
     if (onError) onError(err);
