@@ -313,6 +313,19 @@ const SignerView = () => {
       setSignedPdfUrl(result.downloadUrl);
       setIsCompleted(true);
       showToast("Document signed successfully!", "success");
+
+      // Anonymize Signer: Delete the temporary Firebase User record used for 2FA.
+      // This protects signer privacy by removing their phone number from the Auth list.
+      const user = auth.currentUser;
+      if (user) {
+        try {
+          await user.delete();
+        } catch (authErr) {
+          // If the session expired or re-auth is needed, we log it and move on.
+          // We don't want to block the success screen if deletion fails.
+          console.warn('Signer anonymization (user deletion) failed:', authErr);
+        }
+      }
     } catch (error) {
       console.error('Error during the signing process:', error);
       showToast(`An error occurred: ${error.message}`, "error");
