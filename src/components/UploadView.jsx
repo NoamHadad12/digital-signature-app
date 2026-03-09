@@ -17,6 +17,10 @@ const UploadView = () => {
     generatedLink,
     isCopied,
     numPages,
+    useSmsAuth,
+    setUseSmsAuth,
+    signerPhone,
+    setSignerPhone,
     fields,
     setFields,
     activeFieldType,
@@ -95,6 +99,65 @@ const UploadView = () => {
           className="file-input"
         />
       </div>
+
+      {fileUrl && !generatedLink && (
+        <div style={{
+          background: '#ffffff',
+          border: '1px solid #e5e7eb',
+          borderRadius: '8px',
+          padding: '16px 20px',
+          marginTop: '20px',
+          textAlign: 'left',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+        }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '12px', marginTop: 0 }}>
+            <span style={{ marginRight: '8px' }}>🛡️</span>
+            Security Settings
+          </h3>
+          
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: useSmsAuth ? '12px' : '0' }}>
+            <input
+              type="checkbox"
+              id="sms-auth-toggle"
+              checked={useSmsAuth}
+              onChange={(e) => setUseSmsAuth(e.target.checked)}
+              style={{ width: '16px', height: '16px', marginRight: '10px', cursor: 'pointer', accentColor: '#7c3aed' }}
+            />
+            <label htmlFor="sms-auth-toggle" style={{ fontSize: '0.9rem', color: '#4b5563', cursor: 'pointer', fontWeight: 500 }}>
+              Protect with SMS Authentication
+            </label>
+          </div>
+
+          {useSmsAuth && (
+            <div style={{ paddingLeft: '26px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: '#6b7280', fontWeight: 600, marginBottom: '6px' }}>
+                Signer's Phone Number
+              </label>
+              <input
+                type="tel"
+                value={signerPhone}
+                onChange={(e) => setSignerPhone(e.target.value)}
+                placeholder="+972"
+                style={{
+                  width: '100%',
+                  maxWidth: '300px',
+                  padding: '8px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '0.9rem',
+                  outline: 'none',
+                  transition: 'border-color 0.2s'
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#7c3aed'}
+                onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+              />
+              <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '6px', marginBottom: 0 }}>
+                An SMS code will be required to view and sign the document.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Render PDF Preview to select signature location */}
       {fileUrl && !generatedLink && (

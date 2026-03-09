@@ -29,6 +29,10 @@ export function useUploadView() {
   const [generatedLink, setGeneratedLink] = useState('');
   const [isCopied, setIsCopied] = useState(false);
 
+  // Security Settings: Phase 1 (SMS 2FA)
+  const [useSmsAuth, setUseSmsAuth] = useState(false);
+  const [signerPhone, setSignerPhone] = useState('+972');
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [editingSuggestionId, setEditingSuggestionId] = useState(null);
   const [editingLabel, setEditingLabel] = useState('');
@@ -254,11 +258,15 @@ export function useUploadView() {
   const saveDocumentToFirestore = async (fileId, fileName, fileUrl, confirmedFields) => {
     const documentRef = doc(db, 'documents', fileId);
 
+    // Only save phone number if SMS auth is enabled
+    const finalPhone = useSmsAuth ? signerPhone.trim() : '';
+
     await setDoc(documentRef, {
       fileName,
       fileUrl,
       clientId:  currentUser.uid,
       createdAt: new Date().toISOString(),
+      signerPhone: finalPhone,
       fields: confirmedFields.map((field, index) => ({
         index,
         type:  field.type  || 'signature',
@@ -277,6 +285,13 @@ export function useUploadView() {
       showToast('Please select a PDF file first.', 'error');
       return;
     }
+
+    // Validate SMS authentication fields
+    if (useSmsAuth && !signerPhone.trim()) {
+      showToast('Please enter a valid phone number for SMS Authentication.', 'error');
+      return;
+    }
+
     const confirmedFields  = fields.filter((f) => f.confirmed);
     const pendingFields    = fields.filter((f) => !f.confirmed);
     if (confirmedFields.length === 0 && pendingFields.length > 0) {
@@ -340,6 +355,10 @@ export function useUploadView() {
     generatedLink,
     isCopied,
     numPages,
+    useSmsAuth,
+    setUseSmsAuth,
+    signerPhone,
+    setSignerPhone,
     fields,
     setFields,
     activeFieldType,

@@ -278,9 +278,9 @@ const SignerView = () => {
 
               {/* Signature card */}
               {hasSignature && (
-                <div className="form-card form-card--sig">
-                  <div className="form-card-header" style={{ color: '#e53e3e', borderBottomColor: '#e53e3e1a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div className="form-card form-card--sig" style={{ minWidth: '340px', maxWidth: 'none', display: 'flex', flexDirection: 'column', minHeight: '180px' }}>
+                  <div className="form-card-header" style={{ color: '#e53e3e', borderBottomColor: '#e53e3e1a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <span className="form-card-label">Signature</span>
                       <div className="flex bg-gray-100 rounded-lg p-1 ml-2">
                         <button
@@ -297,24 +297,24 @@ const SignerView = () => {
                         </button>
                       </div>
                     </div>
-                    <button className="form-clear-btn" onClick={handleClearSignature} title="Clear signature">↺</button>
+                    <button className="form-clear-btn z-10 relative bg-white rounded-full shadow-sm" style={{ padding: '4px 8px', marginLeft: 'auto' }} onClick={handleClearSignature} title="Clear signature">↺</button>
                   </div>
-                  <div className="form-card-body">
+                  <div className="form-card-body" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                     {signMode === 'draw' ? (
-                      <div className="form-sig-wrap" style={{ borderColor: isSigned ? '#e53e3e55' : '#e0e0e0' }}>
+                      <div className="form-sig-wrap" style={{ flexGrow: 1, height: '120px', minHeight: '120px', borderColor: isSigned ? '#e53e3e55' : '#e0e0e0' }}>
                         <SignatureCanvas
                           ref={sigCanvas}
                           penColor="#1a1a1a"
                           onBegin={() => setIsSigned(true)}
-                          canvasProps={{ className: 'sigCanvas' }}
+                          canvasProps={{ className: 'sigCanvas', style: { width: '100%', height: '100%' } }}
                         />
                         {!isSigned && <div className="form-sig-placeholder">Sign here</div>}
                       </div>
                     ) : (
-                      <div className="form-sig-wrap" style={{ display: 'flex', alignItems: 'center', justifyItems: 'center', padding: '10px', height: '110px', borderColor: isSigned ? '#e53e3e55' : '#e0e0e0' }}>
+                      <div className="form-sig-wrap" style={{ display: 'flex', flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: '10px', height: '120px', minHeight: '120px', borderColor: isSigned ? '#e53e3e55' : '#e0e0e0' }}>
                         {uploadedSignature ? (
-                          <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <img src={uploadedSignature} alt="Uploaded signature" style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
+                          <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                            <img src={uploadedSignature} alt="Uploaded signature" className="object-contain max-h-full" style={{ maxHeight: '100%', maxWidth: '100%' }} />
                           </div>
                         ) : (
                           <label style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#666' }}>

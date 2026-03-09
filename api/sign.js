@@ -128,8 +128,17 @@ export default async function handler(req, res) {
           formValues && formValues[markerIndex] != null ? String(formValues[markerIndex]) : '';
 
         if (rawValue) {
-          // Scale font size proportionally to the box height; clamp between 8 pt and 20 pt
-          const fontSize = Math.max(8, Math.min(sigHeight * 0.55, 20));
+          // Scale font size proportionally to the box height (nh); clamp between 8 pt and 20 pt
+          let fontSize = Math.max(8, Math.min(sigHeight * 0.55, 20));
+
+          // Ensure the font size scales appropriately to the bounding box width (nw) so it fits exactly
+          let textWidth = hebrewFont.widthOfTextAtSize(rawValue, fontSize);
+          const maxTextWidth = Math.max(10, sigWidth - 8);
+          if (textWidth > maxTextWidth) {
+            fontSize = Math.max(4, fontSize * (maxTextWidth / textWidth));
+            textWidth = hebrewFont.widthOfTextAtSize(rawValue, fontSize);
+          }
+
           // Vertically center the text baseline within the bounding box
           const textY = targetY + (sigHeight - fontSize) / 2;
 
@@ -139,20 +148,17 @@ export default async function handler(req, res) {
           const isRTL = containsHebrew(rawValue);
 
           // Right-align Hebrew text by anchoring the start x to the right edge of the box.
-          // widthOfTextAtSize measures the rendered advance width of the unmodified string.
-          const textWidth = hebrewFont.widthOfTextAtSize(rawValue, fontSize);
           const textX = isRTL
             ? targetX + sigWidth - textWidth - 4  // Hebrew: anchor to the right edge
             : targetX + 4;                         // Latin/digits: anchor to the left edge
 
-          // Pass the string exactly as typed — no reversal, no reordering.
+          // Pass the string exactly as typed.
           targetPage.drawText(rawValue, {
             x: textX,
             y: textY,
             size: fontSize,
             font: hebrewFont,
-            color: rgb(0.05, 0.05, 0.05),
-            maxWidth: sigWidth - 8,
+            color: rgb(0.05, 0.05, 0.05)
           });
         }
       }
