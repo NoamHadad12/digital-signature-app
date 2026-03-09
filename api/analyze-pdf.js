@@ -104,7 +104,7 @@ async function callGemini({ imageBase64, mimeType, pageNumber }) {
       maxOutputTokens: 1024,
       responseMimeType: 'application/json',
     },
-  }, { apiVersion: 'v1' });
+  }, { apiVersion: 'v1beta' });
 
   try {
     const result = await model.generateContent([
