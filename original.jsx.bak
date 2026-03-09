@@ -184,84 +184,67 @@ const SignerView = () => {
     ? '*'.repeat(signerPhone.length - 4) + signerPhone.slice(-4)
     : signerPhone;
 
-  // Standardize phone number format strictly to E.164
-  const formatPhoneNumber = (phone) => {
-    let digits = (phone || '').replace(/\D/g, '');
-    if (digits.startsWith('0')) {
-      digits = '972' + digits.substring(1);
-    }
-    return '+' + digits;
-  };
-
-  // Robust singleton reCAPTCHA initialization to prevent "already rendered" errors
-  const renderRecaptcha = () => {
+  // Destroy the existing reCAPTCHA verifier and wipe the DOM container so a
+  // fresh widget can be rendered without the "already been rendered" error.
+  const teardownRecaptcha = () => {
+    // Check if the verifier exists globally or in the ref to avoid rendering conflicts
     if (window.recaptchaVerifier) {
-      try { window.recaptchaVerifier.clear(); } catch { /* ignore */ }
+      try { window.recaptchaVerifier.clear(); } catch (e) { console.error('Error clearing global verifier', e); }
       window.recaptchaVerifier = null;
     }
     if (recaptchaVerifierRef.current) {
+      try { recaptchaVerifierRef.current.clear(); } catch { /* ignore */ }
       recaptchaVerifierRef.current = null;
     }
-
     const el = document.getElementById('recaptcha-container');
     if (el) el.innerHTML = '';
-
-    window.recaptchaVerifier = new RecaptchaVerifier(
-      auth,
-      'recaptcha-container',
-      {
-        size: 'invisible',
-        callback: () => { /* solved */ },
-        'expired-callback': () => {
-          if (window.recaptchaVerifier) {
-            try { window.recaptchaVerifier.clear(); } catch { /* ignore */ }
-            window.recaptchaVerifier = null;
-          }
-        }
-      }
-    );
-
-    recaptchaVerifierRef.current = window.recaptchaVerifier;
-    return window.recaptchaVerifier;
   };
 
   const handleSendCode = async () => {
-    // Atomic execution check
-    if (twoFAState === 'sending') return;
-
     setTwoFAState('sending');
     try {
-      const formattedPhone = formatPhoneNumber(signerPhone);
-      console.log(`[Auth Debug] Attempting SMS to: ${formattedPhone}`);
+      // 1. Sanitize phone number to E.164 format (e.g., +9725XXXXXXXX)
+      let formattedPhone = signerPhone.trim().replace(/\s+/g, '').replace(/-/g, '');
+      if (formattedPhone.startsWith('0')) {
+        formattedPhone = '+972' + formattedPhone.substring(1);
+      } else if (!formattedPhone.startsWith('+')) {
+        formattedPhone = '+' + formattedPhone;
+      }
+      
+      console.log("Sending SMS to:", formattedPhone);
 
-      const verifier = renderRecaptcha();
+      // 2. Always tear down first — prevents "already been rendered" on every retry
+      teardownRecaptcha();
+
+      // 3. Initialize fresh Singleton instance
+      window.recaptchaVerifier = new RecaptchaVerifier(
+        auth,
+        'recaptcha-container',
+        { 
+          size: 'invisible',
+          'callback': () => { /* reCAPTCHA solved */ },
+          'expired-callback': () => { teardownRecaptcha(); }
+        }
+      );
+      recaptchaVerifierRef.current = window.recaptchaVerifier;
 
       const confirmation = await signInWithPhoneNumber(
         auth,
         formattedPhone,
-        verifier
+        recaptchaVerifierRef.current
       );
-      
       confirmationRef.current = confirmation;
       setTwoFAState('waiting');
       showToast('קוד אימות נשלח לטלפון שלך', 'success');
     } catch (err) {
-      console.error('[Auth Debug] 2FA send error:', err);
+      console.error('2FA send error:', err);
       let errorMsg = 'שגיאה בשליחת קוד האימות. בדוק את מספר הטלפון ונסה שוב.';
       
       if (err.code === 'auth/invalid-phone-number') errorMsg = 'מספר טלפון לא תקין.';
       if (err.code === 'auth/too-many-requests') errorMsg = 'יותר מדיי ניסיונות. נסה שוב מאוחר יותר.';
       
       showToast(errorMsg, 'error');
-      
-      // Cleanup to allow immediate retry
-      if (window.recaptchaVerifier) {
-        try { window.recaptchaVerifier.clear(); } catch { /* ignore */ }
-        window.recaptchaVerifier = null;
-      }
-      const el = document.getElementById('recaptcha-container');
-      if (el) el.innerHTML = '';
-
+      teardownRecaptcha();
       setTwoFAState('idle');
     }
   };
@@ -379,8 +362,6 @@ const SignerView = () => {
     }
   };
 
-  // Centralized render router so we can ensure recaptcha-container is unconditionally present
-  const renderContent = () => {
   // Success screen view
   if (isCompleted) {
     return (
@@ -414,6 +395,9 @@ const SignerView = () => {
   if (is2FARequired && twoFAState !== 'verified') {
     return (
       <div className="signer-view" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        {/* Invisible reCAPTCHA anchor — Firebase attaches the widget here */}
+        <div id="recaptcha-container" />
+
         <div style={{
           background: '#fff',
           borderRadius: 16,
@@ -483,13 +467,7 @@ const SignerView = () => {
                 onClick={() => {
                   setOtpCode('');
                   // Tear down the existing verifier + DOM widget before resending
-                  if (window.recaptchaVerifier) {
-                    try { window.recaptchaVerifier.clear(); } catch { /* ignore */ }
-                    window.recaptchaVerifier = null;
-                  }
-                  const el = document.getElementById('recaptcha-container');
-                  if (el) el.innerHTML = '';
-                  
+                  teardownRecaptcha();
                   setTwoFAState('idle');
                 }}
               >
@@ -674,15 +652,6 @@ const SignerView = () => {
         </div>
       </div>
     </div>
-  );
-  };
-
-  return (
-    <>
-      {/* Invisible reCAPTCHA container MUST strictly remain in the DOM at all times */}
-      <div id="recaptcha-container"></div>
-      {renderContent()}
-    </>
   );
 };
 
