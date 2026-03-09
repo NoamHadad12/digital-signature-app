@@ -37,11 +37,12 @@ const parsePercent = (value) => {
 
 const normalizeSuggestion = (entry) => {
   const rawType = String(entry?.type || '').trim().toLowerCase();
-  const type = rawType === 'text' ? 'text' : rawType === 'date' ? 'date' : rawType === 'signature' ? 'signature' : null;
+  // Relaxed filtering: default to 'text' if not strictly 'date' or 'signature'
+  const type = rawType.includes('date') ? 'date' : rawType.includes('signature') ? 'signature' : 'text';
   const x = parsePercent(entry?.x);
   const y = parsePercent(entry?.y);
 
-  if (!type || x == null || y == null) {
+  if (x == null || y == null) {
     return null;
   }
 

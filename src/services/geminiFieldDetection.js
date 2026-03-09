@@ -22,9 +22,7 @@ const parsePercentToUnit = (value) => {
   let numeric = null;
 
   if (typeof value === 'number' && Number.isFinite(value)) {
-    // Gemini 2.5 Flash returns spatial coordinates in a 0-1000 scale.
-    // We divide by 10 to get percentages (0-100) and then /100 to get units (0-1).
-    numeric = value / 10;
+    numeric = value;
   }
   if (numeric == null) {
     if (typeof value !== 'string') {
@@ -35,8 +33,6 @@ const parsePercentToUnit = (value) => {
     if (!Number.isFinite(numeric)) {
       return null;
     }
-    // Coordinate mapping for 0-1000 scale string input
-    numeric = numeric / 10;
   }
 
   return clamp(numeric, 0, 100) / 100;
