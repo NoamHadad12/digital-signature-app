@@ -14,8 +14,10 @@ export const maxDuration = 60;
 
 const MODEL_NAME = 'gemini-2.5-flash';
 
-const ANALYSIS_PROMPT = "You are a document parser. Return ONLY a JSON array of objects: { 'type': 'signature' | 'date', 'label': string, 'x': number, 'y': number }. Identify lines near 'Signature' and 'Date' labels. Set x and y to the center point of the fillable area. Gemini 2.5 Flash returns spatial coordinates in a 0-1000 scale.";
+const ANALYSIS_PROMPT = "You are an expert document analyzer. Look specifically for horizontal lines or empty spaces next to labels like 'Signature', 'Date', or 'Name'. Return coordinates where the CENTER of each input field (the blank line or box the user writes in) should be. Use a 0-1000 scale where [0,0] is the top-left corner and [1000,1000] is the bottom-right corner. BE PRECISE — inspect the actual pixel position of each field. Do not return round numbers like 500 unless the field is genuinely centered. Return ONLY a raw JSON array of objects — no markdown, no backticks, no text before or after the array. Each object must have exactly these keys: { \"type\": \"signature\" | \"date\", \"label\": string, \"x\": number, \"y\": number }. The array must be complete and valid JSON with every object properly closed."
 
+// Coordinate scaling: Gemini returns values on a 0-1000 scale.
+// We must divide by 10 to convert them to 0-100 percent values used by the UI.
 const parsePercent = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) {
     // Gemini 2.5 Flash returns 0-1000 scale. Convert to 0-100 percentages.
@@ -57,15 +59,17 @@ const normalizeSuggestion = (entry) => {
 };
 
 const parseGeminiJson = (rawText) => {
-  // Robust cleaner for AI output
-  const cleanText = String(rawText || '')
-    .replace(/```json|```/g, "")
-    .trim();
+  const raw = String(rawText || '');
 
-  console.log("[AI Debug] Raw Gemini Output:", cleanText);
+  // Use a regex to extract the outermost JSON array, handling any surrounding
+  // text, markdown fences (```json ... ```), or stray characters Gemini may add.
+  const match = raw.match(/\[[\s\S]*\]/);
+  const cleanText = match ? match[0].trim() : '';
 
-  if (!cleanText || cleanText === '[]' || cleanText === 'null') {
-    console.warn('[analyze-pdf] Gemini returned an empty array or no detections. Raw text:', rawText);
+  console.log('[AI Debug] Cleaned Gemini Output:', cleanText);
+
+  if (!cleanText || cleanText === '[]') {
+    console.warn('[analyze-pdf] Gemini returned no detectable JSON array. Full raw response:', raw);
     return [];
   }
 
@@ -73,7 +77,13 @@ const parseGeminiJson = (rawText) => {
   try {
     parsed = JSON.parse(cleanText);
   } catch (error) {
-    console.error('[analyze-pdf] Failed to parse Gemini output:', cleanText, error);
+    // Log the first and last 50 chars of the raw response to pinpoint where truncation occurs.
+    const head = raw.slice(0, 50);
+    const tail = raw.slice(-50);
+    console.error('[analyze-pdf] JSON.parse failed. Parse error:', error.message);
+    console.error('[analyze-pdf] Raw response head (first 50):', head);
+    console.error('[analyze-pdf] Raw response tail (last 50):', tail);
+    console.error('[analyze-pdf] Full cleaned/extracted string:', cleanText);
     return [];
   }
 
@@ -102,7 +112,8 @@ async function callGemini({ imageBase64, mimeType, pageNumber }) {
     model: MODEL_NAME,
     generationConfig: {
       temperature: 0,
-      maxOutputTokens: 1024,
+      // 4096 tokens prevents truncated JSON on long documents with many fields.
+      maxOutputTokens: 4096,
       responseMimeType: 'application/json',
     },
   }, { apiVersion: 'v1beta' });

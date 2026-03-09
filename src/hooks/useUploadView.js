@@ -35,6 +35,9 @@ export function useUploadView() {
   const [signerPhone, setSignerPhone] = useState('+972');
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // Ref-based guard prevents a second request from firing while one is already in flight,
+  // even if the disabled button state is briefly bypassed (e.g. rapid keyboard activation).
+  const analyzingRef = useRef(false);
   const [editingSuggestionId, setEditingSuggestionId] = useState(null);
   const [editingLabel, setEditingLabel] = useState('');
 
@@ -148,7 +151,9 @@ export function useUploadView() {
   };
 
   const handleAnalyze = async () => {
-    if (!file) return;
+    // Prevent double-submission if a request is already in flight.
+    if (!file || analyzingRef.current) return;
+    analyzingRef.current = true;
     setIsAnalyzing(true);
     setFields((prev) => prev.filter((f) => f.confirmed));
 
@@ -175,6 +180,7 @@ export function useUploadView() {
         showToast('Oops! We hit a small snag while trying to read your document. Please give it another try.', 'error');
       }
     } finally {
+      analyzingRef.current = false;
       setIsAnalyzing(false);
     }
   };
