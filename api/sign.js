@@ -84,8 +84,20 @@ export default async function handler(req, res) {
     // Embed the signature image only when the signer provided one
     let signatureImage = null;
     if (signatureData) {
-      const base64Data = signatureData.split(',')[1];
-      signatureImage = await pdfDoc.embedPng(Buffer.from(base64Data, 'base64'));
+      try {
+        const isJpeg = signatureData.startsWith('data:image/jpeg') || signatureData.startsWith('data:image/jpg');
+        const base64Data = signatureData.split(',')[1];
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+        
+        if (isJpeg) {
+          signatureImage = await pdfDoc.embedJpg(imageBuffer);
+        } else {
+          signatureImage = await pdfDoc.embedPng(imageBuffer);
+        }
+      } catch (imgError) {
+        console.error('Image embedding failed:', imgError);
+        return res.status(400).json({ error: 'Failed to process signature image. Please ensure it is a valid PNG or JPG.' });
+      }
     }
 
     const pages = pdfDoc.getPages();
@@ -122,8 +134,8 @@ export default async function handler(req, res) {
             opacity: 0.95,
           });
         }
-      } else if (marker.type === 'text' || marker.type === 'customText' || marker.type === 'date') {
-        // 'text' covers legacy markers; 'customText' and 'date' are the current marker types
+      } else {
+        // Handle all text fields properly, including 'text', 'customText' (AI-generated), and 'date'
         const rawValue =
           formValues && formValues[markerIndex] != null ? String(formValues[markerIndex]) : '';
 

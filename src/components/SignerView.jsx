@@ -53,8 +53,32 @@ const SignerView = () => {
     if (file && (file.type === 'image/png' || file.type === 'image/jpeg' || file.type === 'image/jpg')) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setUploadedSignature(reader.result);
-        setIsSigned(true);
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          const MAX_SIZE = 500;
+          
+          if (width > MAX_SIZE || height > MAX_SIZE) {
+            if (width > height) {
+              height *= MAX_SIZE / width;
+              width = MAX_SIZE;
+            } else {
+              width *= MAX_SIZE / height;
+              height = MAX_SIZE;
+            }
+          }
+          
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Generate an optimized PNG data URL
+          setUploadedSignature(canvas.toDataURL('image/png'));
+          setIsSigned(true);
+        };
+        img.src = reader.result;
       };
       reader.readAsDataURL(file);
     }
