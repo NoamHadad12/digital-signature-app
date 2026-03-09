@@ -1,123 +1,84 @@
-# SignFlow: Digital PDF Signing Application
+# SignFlow
 
-SignFlow is a modern, web-based application that simplifies the process of signing PDF documents. Users can upload a PDF, generate a unique and secure link, and share it with others to collect digital signatures. The application intelligently places the signature on the document and provides a downloadable, signed copy.
+SignFlow is a modern digital document management and signing platform. It streamlines the document workflow by using AI-powered field detection to automatically identify where signatures, dates, and text input are required.
 
- <!-- It's recommended to add a GIF or screenshot of your app here -->
+## 🚀 Key Features
 
-## ✨ Features
+- **Digital Signatures:** Securely sign PDF documents with custom signature inputs.
+- **AI Field Detection:** Powered by **Gemini 1.5 Flash**, the system automatically analyzes PDFs to suggest form field placements.
+- **Admin Dashboard:** Manage users, track document statuses (Pending, Signed), and view recent activity.
+- **Real-time Updates:** Integrated with **Firebase Firestore** for instant document state tracking.
+- **Secure Storage:** Documents are safely stored in **Firebase Storage**.
 
--   **PDF Upload**: Easily upload any PDF document from your local machine.
--   **Shareable Links**: Automatically generates a unique URL for each document, making it easy to share for signing.
--   **Digital Signature Pad**: An intuitive canvas for drawing a smooth and natural-looking signature.
--   **Intelligent Signature Placement**: The backend service scans the document for keywords like "Signature" or "Sign Here" to automatically place the signature in the correct location.
--   **Secure Cloud Storage**: All documents (original and signed) are securely stored using Firebase Cloud Storage.
--   **Download Signed Documents**: Once signed, a download link for the completed PDF is provided.
--   **Responsive Design**: A clean and functional interface that works on various devices.
+## 🛠 Tech Stack
 
-## 🚀 Technologies Used
+- **Frontend:** React, Vite, Tailwind CSS, Lucide React
+- **Backend:** Vercel Serverless Functions (Node.js)
+- **Database & Storage:** Firebase (Firestore & Storage)
+- **AI Engine:** Google Gemini AI API
+- **PDF Manipulation:** `pdf-lib`, `react-pdf`
+- **Hosting:** Vercel
 
--   **Frontend**:
-    -   [React](https://reactjs.org/)
-    -   [Vite](https://vitejs.dev/)
-    -   [React Router](https://reactrouter.com/) for client-side routing.
-    -   [React-PDF](https://github.com/wojtekmaj/react-pdf) for rendering PDFs in the browser.
-    -   [React Signature Canvas](https://github.com/agilgur5/react-signature-canvas) for the signature pad.
--   **Backend (Serverless)**:
-    -   [Vercel Serverless Functions](https://vercel.com/docs/functions)
-    -   [Node.js](https://nodejs.org/)
--   **Services & Libraries**:
-    -   [Firebase Cloud Storage](https://firebase.google.com/docs/storage) for file storage.
-    -   [pdf-lib](https://pdf-lib.js.org/) for embedding signatures into PDF documents on the server.
-    -   [pdfjs-dist](https://mozilla.github.io/pdf.js/) for parsing PDF text content to find signature locations.
-    -   [UUID](https://github.com/uuidjs/uuid) for generating unique document IDs.
+## 📋 Prerequisites
 
-## ⚙️ Installation & Setup
+Before you begin, ensure you have the following installed:
+- [Node.js](https://nodejs.org/) (v18 or higher)
+- [npm](https://www.npmjs.com/) (comes with Node.js)
+- [Vercel CLI](https://vercel.com/docs/cli) (Installed globally via `npm i -g vercel`)
+- A Firebase Project (with Firestore and Storage enabled)
+- A Google AI Studio API Key (for Gemini)
 
-Follow these steps to get the project running on your local machine.
+## ⚙️ Installation
 
-**1. Clone the Repository**
+1. **Clone the repository:**
+   ```bash
+   git clone <your-repo-url>
+   cd signflow
+   ```
 
-```bash
-git clone https://github.com/your-username/digital-signature-app.git
-cd digital-signature-app
-```
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
-**2. Install Dependencies**
+3. **Configure Environment Variables:**
+   Create a `.env` file in the root directory (or `.env.local`) and add your credentials:
+   ```env
+   # Firebase Configuration
+   VITE_FIREBASE_API_KEY=your_api_key
+   VITE_FIREBASE_AUTH_DOMAIN=your_project_id.firebaseapp.com
+   VITE_FIREBASE_PROJECT_ID=your_project_id
+   VITE_FIREBASE_STORAGE_BUCKET=your_project_id.appspot.com
+   VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+   VITE_FIREBASE_APP_ID=your_app_id
 
-Install the required npm packages for both the frontend and backend.
+   # Gemini AI Configuration
+   VITE_GEMINI_API_KEY=your_gemini_api_key
+   ```
 
-```bash
-npm install
-```
+## 💻 Running Locally
 
-**3. Set Up Environment Variables**
-
-You will need a Firebase project to handle storage.
-
--   Create a new project on the [Firebase Console](https://console.firebase.google.com/).
--   Go to Project Settings > Service accounts to get your project configuration.
--   Enable Cloud Storage in your Firebase project.
-
-Create a `.env.local` file in the root of the project and add your Firebase configuration keys. This file is included in `.gitignore` and should not be committed to version control.
-
-```env
-# .env.local
-
-# Firebase Variables for the Frontend (Vite)
-VITE_FIREBASE_API_KEY=AIza...
-VITE_FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your-project-id
-VITE_FIREBASE_STORAGE_BUCKET=your-project-id.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=...
-VITE_FIREBASE_APP_ID=...
-
-# Gemini Field Detection
-VITE_GEMINI_API_KEY=AIza...
-```
-
-**4. Run the Development Server**
-
-This command starts the Vite development server for the React frontend and makes the Vercel serverless function available for local development.
+To run the application with both the Vite frontend and the Vercel Serverless backend functions, use the following command:
 
 ```bash
 npm run dev
 ```
 
-The application will be available at `http://localhost:5173` (or another port if 5173 is in use). The serverless API will be proxied from `/api`.
+> **Note:** We use `vercel dev` as the main development command in `package.json`. This ensures that the `/api` routes are correctly served alongside the frontend, avoiding `ECONNREFUSED` or `502 Bad Gateway` errors during local development. By default, `vercel dev` will detect the Vite project and start both the frontend (usually on port 5173 or similar) and the serverless functions (usually on port 3000).
 
-## 📖 Usage
+If you are running this for the first time, you might need to link your project to Vercel:
+```bash
+vercel link
+```
 
-1.  **Upload a PDF**:
-    -   Navigate to the home page.
-    -   Click the "Choose File" button and select a PDF document.
-    -   Click "Upload & Generate Link".
+## 🏗 Project Structure
 
-2.  **Share the Link**:
-    -   A unique link for the document will be displayed.
-    -   Copy the link and share it with the person who needs to sign.
+- `api/`: Vercel Serverless Functions (Backend logic, e.g., PDF analysis).
+- `src/components/`: Reusable UI components and page views.
+- `src/hooks/`: Custom React hooks for business logic.
+- `src/services/`: Database and AI service integrations.
+- `src/utils/`: Helper functions for PDF handling and logging.
 
-3.  **Sign the Document**:
-    -   Opening the link will load the `SignerView`, displaying the PDF.
-    -   Use the signature pad at the bottom to draw a signature.
-    -   Click "Complete & Sign".
+## 📄 License
 
-4.  **Download**:
-    -   The signature is embedded into the PDF, and a new signed version is created.
-    -   A success screen appears with a button to download the final document.
-
-
-
-    # 1. Switch to the main branch
-git checkout main
-
-# 2. Pull the latest changes from the remote main to stay updated
-git pull origin main
-
-# 3. Merge the dev branch into main
-git merge dev
-
-# 4. Push the merged changes to the remote repository (this triggers Vercel deployment)
-git push origin main
-
-# 5. Optional: Switch back to dev to continue working on new features
-git checkout dev
+Distributed under the MIT License. See `LICENSE` for more information.
