@@ -244,11 +244,14 @@ export const getFilteredDocuments = async (uid, startDate, endDate) => {
 
   try {
     const querySnapshot = await getDocs(q);
-    const docs = querySnapshot.docs.map((d) => {
+    const validDocs = [];
+    querySnapshot.docs.forEach((d) => {
       const data = d.data();
-      return { id: d.id, ...data, _isGhost: isGhostRecord(data) };
+      if (!isGhostRecord(data)) {
+        validDocs.push({ id: d.id, ...data, _isGhost: false });
+      }
     });
-    return applyDocumentDateFilters(docs, startDate, endDate);
+    return applyDocumentDateFilters(validDocs, startDate, endDate);
   } catch (err) {
     console.error('[getFilteredDocuments] Firestore query failed:', err);
     throw err;
@@ -270,17 +273,20 @@ export const subscribeFilteredDocuments = (uid, startDate, endDate, onData, onEr
   const q = query(docsRef, where('clientId', '==', uid));
 
   return onSnapshot(q, (querySnapshot) => {
-    const docs = querySnapshot.docs.map((d) => {
+    const validDocs = [];
+    querySnapshot.docs.forEach((d) => {
       const data = d.data();
       const ghost = isGhostRecord(data);
       if (ghost) {
-        console.warn(`[subscribeFilteredDocuments] Ghost record detected: ${d.id}`, data);
+        console.warn(`[subscribeFilteredDocuments] Ghost record detected and filtered out: ${d.id}`, data);
+        // Do not add ghost records to the UI
+      } else {
+        validDocs.push({ id: d.id, ...data, _isGhost: false });
       }
-      return { id: d.id, ...data, _isGhost: ghost };
     });
 
-    console.log(`[subscribeFilteredDocuments] Snapshot received: ${docs.length} documents`);
-    onData(applyDocumentDateFilters(docs, startDate, endDate));
+    console.log(`[subscribeFilteredDocuments] Snapshot received: ${validDocs.length} valid documents`);
+    onData(applyDocumentDateFilters(validDocs, startDate, endDate));
   }, (err) => {
     console.error('[subscribeFilteredDocuments] Listener error:', err);
     if (onError) onError(err);

@@ -14,11 +14,16 @@ export const maxDuration = 60;
 
 const MODEL_NAME = 'gemini-1.5-flash';
 
-const ANALYSIS_PROMPT = "Find any line that looks like it needs a signature or a date. Return ONLY a flat JSON array of objects: { 'type': 'signature' | 'date', 'x': number, 'y': number }. No nested objects, no markdown.";
+const ANALYSIS_PROMPT = "Find any line that looks like it needs a signature or a date. Return ONLY a raw JSON array of objects: { 'type': 'signature' | 'date', 'x': number, 'y': number }. No markdown, no backticks, no conversational text. Set x and y to the center point of the fillable area as percentages from 0 to 100. If you return values from 0 to 1000, ensure they are divided by 10 so they represent a percentage (0 to 100).";
 
 const parsePercent = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return value > 0 && value < 1 ? value * 100 : value;
+    // Coordinate mapping check in case AI returns numbers in 0-1000 bounds instead of 0-100
+    let mappedValue = value;
+    if (mappedValue > 100 && mappedValue <= 1000) {
+      mappedValue = mappedValue / 10;
+    }
+    return mappedValue > 0 && mappedValue < 1 ? mappedValue * 100 : mappedValue;
   }
 
   if (typeof value !== 'string') {
@@ -30,7 +35,13 @@ const parsePercent = (value) => {
     return null;
   }
 
-  return numeric > 0 && numeric < 1 ? numeric * 100 : numeric;
+  // Handle case where Gemini returns coordinate in the 0-1000 range instead of 0-100
+  let mappedValue = numeric;
+  if (mappedValue > 100 && mappedValue <= 1000) {
+    mappedValue = mappedValue / 10;
+  }
+
+  return mappedValue > 0 && mappedValue < 1 ? mappedValue * 100 : mappedValue;
 };
 
 const normalizeSuggestion = (entry) => {
@@ -60,15 +71,18 @@ const parseGeminiJson = (rawText) => {
     .replace(/```/g, '')
     .trim();
 
-  if (!cleanText) {
+  console.log("[AI Debug] Raw Gemini Output:", cleanText);
+
+  if (!cleanText || cleanText === '[]' || cleanText === 'null') {
+    console.warn('[analyze-pdf] Gemini returned an empty array or no detections.');
     return [];
   }
 
   let parsed;
   try {
     parsed = JSON.parse(cleanText);
-  } catch (err) {
-    console.error('[analyze-pdf] Failed to parse Gemini output:', rawText);
+  } catch (error) {
+    console.error('[analyze-pdf] Failed to parse Gemini output:', cleanText, error);
     return [];
   }
 

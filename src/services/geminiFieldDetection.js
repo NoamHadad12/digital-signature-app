@@ -4,7 +4,7 @@ const ANALYZE_ENDPOINT = '/api/analyze-pdf';
 const OUTPUT_MIME_TYPE = 'image/jpeg';
 const OUTPUT_QUALITY = 0.95;
 const MAX_RENDER_WIDTH = 2200;
-const BASE_RENDER_SCALE = 2.4;
+const BASE_RENDER_SCALE = 2.4; // Ensuring clarity for thin signature lines
 
 const FIELD_LAYOUT = {
   signature: { width: 0.3, height: 0.06, verticalAnchor: 0.6 },
@@ -99,7 +99,8 @@ const renderPdfPagesToImages = async (file) => {
     for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
       const page = await pdfDocument.getPage(pageNumber);
       const baseViewport = page.getViewport({ scale: 1 });
-      const scale = clamp(MAX_RENDER_WIDTH / baseViewport.width, 1.6, BASE_RENDER_SCALE);
+      // Scale is clamped to at least 2.0 to ensure thin signature lines stay sharp
+      const scale = clamp(MAX_RENDER_WIDTH / baseViewport.width, 2.0, BASE_RENDER_SCALE);
       const viewport = page.getViewport({ scale });
       const { canvas, context } = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
 
