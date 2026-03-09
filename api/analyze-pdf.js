@@ -12,18 +12,14 @@ export const config = {
 
 export const maxDuration = 60;
 
-const MODEL_NAME = 'gemini-1.5-flash';
+const MODEL_NAME = 'gemini-2.5-flash';
 
-const ANALYSIS_PROMPT = "You are a document parser. Return ONLY a JSON array of objects: { 'type': 'signature' | 'date', 'label': string, 'x': number, 'y': number }. Identify lines near 'Signature' and 'Date' labels. Set x and y to the center point of the fillable area as percentages from 0 to 100. Gemini Vision coordinates are in the 0-1000 range — divide them by 10 to convert to percentages.";
+const ANALYSIS_PROMPT = "You are a document parser. Return ONLY a JSON array of objects: { 'type': 'signature' | 'date', 'label': string, 'x': number, 'y': number }. Identify lines near 'Signature' and 'Date' labels. Set x and y to the center point of the fillable area. Gemini 2.5 Flash returns spatial coordinates in a 0-1000 scale.";
 
 const parsePercent = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) {
-    // Coordinate mapping check in case AI returns numbers in 0-1000 bounds instead of 0-100
-    let mappedValue = value;
-    if (mappedValue > 100 && mappedValue <= 1000) {
-      mappedValue = mappedValue / 10;
-    }
-    return mappedValue > 0 && mappedValue < 1 ? mappedValue * 100 : mappedValue;
+    // Gemini 2.5 Flash returns 0-1000 scale. Convert to 0-100 percentages.
+    return value / 10;
   }
 
   if (typeof value !== 'string') {
@@ -35,13 +31,8 @@ const parsePercent = (value) => {
     return null;
   }
 
-  // Handle case where Gemini returns coordinate in the 0-1000 range instead of 0-100
-  let mappedValue = numeric;
-  if (mappedValue > 100 && mappedValue <= 1000) {
-    mappedValue = mappedValue / 10;
-  }
-
-  return mappedValue > 0 && mappedValue < 1 ? mappedValue * 100 : mappedValue;
+  // Handle cases where string contains 0-1000 scale
+  return numeric / 10;
 };
 
 const normalizeSuggestion = (entry) => {
@@ -65,16 +56,15 @@ const normalizeSuggestion = (entry) => {
 };
 
 const parseGeminiJson = (rawText) => {
-  // Aggressive markdown sanitization as fallback
+  // Robust cleaner for AI output
   const cleanText = String(rawText || '')
-    .replace(/```json/gi, '')
-    .replace(/```/g, '')
+    .replace(/\\\json|\\\/g, "")
     .trim();
 
   console.log("[AI Debug] Raw Gemini Output:", cleanText);
 
   if (!cleanText || cleanText === '[]' || cleanText === 'null') {
-    console.warn('[analyze-pdf] Gemini returned an empty array or no detections.');
+    console.warn('[analyze-pdf] Gemini returned an empty array or no detections. Raw text:', rawText);
     return [];
   }
 
@@ -97,7 +87,7 @@ const parseGeminiJson = (rawText) => {
 async function callGemini({ imageBase64, mimeType, pageNumber }) {
   const apiKey = (process.env.VITE_GEMINI_API_KEY || '').trim();
 
-  if (!apiKey || apiKey.startsWith('${')) {
+  if (!apiKey || apiKey.startsWith('$')) {
     throw new Error('VITE_GEMINI_API_KEY is not configured.');
   }
 
@@ -107,7 +97,6 @@ async function callGemini({ imageBase64, mimeType, pageNumber }) {
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  // Using gemini-1.5-flash without v1beta, as the SDK handles versions natively
   const model = genAI.getGenerativeModel({
     model: MODEL_NAME,
     generationConfig: {
@@ -115,11 +104,11 @@ async function callGemini({ imageBase64, mimeType, pageNumber }) {
       maxOutputTokens: 1024,
       responseMimeType: 'application/json',
     },
-  });
+  }, { apiVersion: 'v1' });
 
   try {
     const result = await model.generateContent([
-      { text: `Page ${pageNumber}. ${ANALYSIS_PROMPT}` },
+      { text: "Page " + pageNumber + ". " + ANALYSIS_PROMPT },
       {
         inlineData: {
           mimeType: mimeType || 'image/jpeg',
@@ -132,9 +121,8 @@ async function callGemini({ imageBase64, mimeType, pageNumber }) {
     console.log('[AI Raw Response]', rawText);
     return parseGeminiJson(rawText);
   } catch (error) {
-    console.warn(`[analyze-pdf] Gemini API error: ${error.message}`);
-    // If ModelNotSupported or 404 is thrown, return empty array to trigger client fallback
-    if (error.status === 404 || error.message?.includes('404') || error.message?.includes('not found') || error.message?.includes('ModelNotSupported')) {
+    console.warn("[analyze-pdf] Gemini API error: " + error.message);
+    if (error.status === 404 || error.message.includes('404') || error.message.includes('not found') || error.message.includes('ModelNotSupported')) {
       return [];
     }
     throw error;
@@ -149,7 +137,7 @@ export default async function handler(req, res) {
   const { imageBase64, mimeType, pageNumber } = req.body || {};
 
   if (!imageBase64 || typeof imageBase64 !== 'string') {
-    return res.status(400).json({ error: '`imageBase64` string is required in the request body.' });
+    return res.status(400).json({ error: 'imageBase64 string is required in the request body.' });
   }
 
   try {
@@ -157,12 +145,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ suggestions });
   } catch (error) {
     console.error('[analyze-pdf] Error:', error.message);
-
-    const isQuotaError =
-      error.message?.includes('429') ||
-      /quota/i.test(error.message || '');
-
-    const statusCode = isQuotaError ? 429 : 500;
-    return res.status(statusCode).json({ error: error.message });
+    return res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
 }
