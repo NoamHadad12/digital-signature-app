@@ -177,9 +177,36 @@ export function useUploadView() {
       const { suggestions: raw } = await response.json();
       console.log("Suggestions received:", raw);
 
+      if (!raw || raw.length === 0) {
+        setAiError({
+          title: 'No fields detected',
+          description: "The AI couldn't automatically find signature or date fields on this document. Please add them manually using the buttons above.",
+        });
+        return;
+      }
+
+      const SAFE_WIDTH = 0.2;
+      const SAFE_HEIGHT = 0.05;
+
+      const mappedSuggestions = raw.map((s, index) => {
+        // Check if coordinates are missing or explicitly near 0/0
+        const needsOffset = !s.nx || !s.ny || (s.nx < 0.01 && s.ny < 0.01);
+        
+        return {
+          ...s,
+          id: crypto.randomUUID(),
+          confirmed: false,
+          // Apply a staircase offset (e.g., move down by 0.08 for each subsequent field)
+          nx: needsOffset ? 0.1 : s.nx,
+          ny: needsOffset ? (0.1 + (index * 0.08)) : s.ny,
+          nw: s.nw || SAFE_WIDTH,
+          nh: s.nh || SAFE_HEIGHT,
+        };
+      });
+
       setFields((prev) => [
         ...prev,
-        ...raw.map((s) => ({ ...s, id: crypto.randomUUID(), confirmed: false })),
+        ...mappedSuggestions,
       ]);
     } catch (error) {
       console.error('[AI] Analysis error:', error);
