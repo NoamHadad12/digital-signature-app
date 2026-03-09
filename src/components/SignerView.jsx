@@ -41,6 +41,7 @@ const SignerView = () => {
   const [numPages, setNumPages] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [isAlreadySigned, setIsAlreadySigned] = useState(false);
   const [signedPdfUrl, setSignedPdfUrl] = useState('');
   const [isSigned, setIsSigned] = useState(false);
   const [signMode, setSignMode] = useState('draw'); // 'draw' | 'upload'
@@ -123,6 +124,12 @@ const SignerView = () => {
         // Load markers and document metadata from Firestore
         const result = await fetchDocument(documentId);
         if (result) {
+          // Block access if this document has already been signed — link is single-use
+          if ((result.data?.status || '').toLowerCase() === 'signed') {
+            setIsAlreadySigned(true);
+            return;
+          }
+
           setMarkers(result.markers);
 
           // Enforce 2FA if the admin stored a signer phone number
@@ -181,7 +188,7 @@ const SignerView = () => {
   // fresh widget can be rendered without the "already been rendered" error.
   const teardownRecaptcha = () => {
     if (recaptchaVerifierRef.current) {
-      try { recaptchaVerifierRef.current.clear(); } catch (_) { /* ignore */ }
+      try { recaptchaVerifierRef.current.clear(); } catch { /* ignore */ }
       recaptchaVerifierRef.current = null;
     }
     const el = document.getElementById('recaptcha-container');
@@ -329,6 +336,16 @@ const SignerView = () => {
         >
           Download Your Copy
         </a>
+      </div>
+    );
+  }
+
+  // Already-signed guard: this link has been used and is now locked
+  if (isAlreadySigned) {
+    return (
+      <div className="success-screen">
+        <h1>🔒 Link No Longer Active</h1>
+        <p>This document has already been signed. The signing link is single-use and is no longer valid.</p>
       </div>
     );
   }

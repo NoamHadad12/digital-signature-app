@@ -101,3 +101,20 @@ The application will be available at `http://localhost:5173` (or another port if
 4.  **Download**:
     -   The signature is embedded into the PDF, and a new signed version is created.
     -   A success screen appears with a button to download the final document.
+
+
+
+    # 1. Switch to the main branch
+git checkout main
+
+# 2. Pull the latest changes from the remote main to stay updated
+git pull origin main
+
+# 3. Merge the dev branch into main
+git merge dev
+
+# 4. Push the merged changes to the remote repository (this triggers Vercel deployment)
+git push origin main
+
+# 5. Optional: Switch back to dev to continue working on new features
+git checkout dev
