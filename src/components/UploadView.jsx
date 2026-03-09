@@ -233,7 +233,7 @@ const UploadView = () => {
               fontSize: '0.88rem',
               color: '#4c1d95',
             }}>
-              <span>🤖 <strong>{fields.filter((f) => !f.confirmed).length}</strong> AI suggestion{fields.filter((f) => !f.confirmed).length !== 1 ? 's' : ''} pending review — approve or reject each field below.</span>
+              <span>🤖 The AI detected <strong>{fields.filter((f) => !f.confirmed).length}</strong> fields! Drag them from the left side to the correct place on the document, then click Approve.</span>
               <button
                 onClick={approveAll}
                 style={{
