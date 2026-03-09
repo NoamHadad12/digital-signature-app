@@ -14,16 +14,7 @@ export const maxDuration = 60;
 
 const MODEL_NAME = 'gemini-1.5-flash';
 
-const ANALYSIS_PROMPT = [
-  "Analyze this document image and identify all 'Signature', 'Date', and 'Text' fields.",
-  "Return a valid JSON array of objects: { type: 'signature' | 'date', label: string, x: percentage, y: percentage }.",
-  "For generic text-entry fields, use type 'text' and keep the same object shape.",
-  "Look specifically for lines labeled 'Client Signature', 'Provider Signature', or empty date lines.",
-  'Only include fields that a person is expected to fill in.',
-  'Set x and y to the center point of the blank line or fillable area as percentages from 0 to 100.',
-  'Return [] if this page does not contain any fillable signature, date, or text fields.',
-  'Return JSON only with no markdown and no extra explanation.',
-].join(' ');
+const ANALYSIS_PROMPT = "Find any line that looks like it needs a signature or a date. Return ONLY a flat JSON array of objects: { 'type': 'signature' | 'date', 'x': number, 'y': number }. No nested objects, no markdown.";
 
 const parsePercent = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -63,20 +54,21 @@ const normalizeSuggestion = (entry) => {
 };
 
 const parseGeminiJson = (rawText) => {
-  const jsonText = String(rawText || '')
+  // Aggressive markdown sanitization as fallback
+  const cleanText = String(rawText || '')
     .replace(/```json/gi, '')
     .replace(/```/g, '')
     .trim();
 
-  if (!jsonText) {
+  if (!cleanText) {
     return [];
   }
 
   let parsed;
   try {
-    parsed = JSON.parse(jsonText);
-  } catch {
-    console.warn('[analyze-pdf] Gemini returned non-JSON content:', rawText);
+    parsed = JSON.parse(cleanText);
+  } catch (err) {
+    console.error('[analyze-pdf] Failed to parse Gemini output:', rawText);
     return [];
   }
 

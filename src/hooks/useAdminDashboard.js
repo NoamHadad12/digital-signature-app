@@ -123,18 +123,20 @@ export function useAdminDashboard() {
         ((docObj.status || '').toLowerCase() === 'signed' ? `pdfs/signed_${docObj.id}.pdf` : null);
 
       // 2. Best effort to delete from Storage (do not block Firestore deletion if this fails e.g 404)
-      const attemptStorageDelete = async (path) => {
-        if (!path) return;
+      if (originalStoragePath) {
         try {
-          await deleteObject(ref(storage, path));
+          await deleteObject(ref(storage, originalStoragePath));
         } catch (err) {
-          console.warn(`[handleDelete] Storage deletion skipped for ${path}`, err);
+          console.warn('Storage file missing, proceeding to DB cleanup', err);
         }
-      };
+      }
 
-      await attemptStorageDelete(originalStoragePath);
       if (signedStoragePath && signedStoragePath !== originalStoragePath) {
-        await attemptStorageDelete(signedStoragePath);
+        try {
+          await deleteObject(ref(storage, signedStoragePath));
+        } catch (err) {
+          console.warn('Storage file missing, proceeding to DB cleanup', err);
+        }
       }
 
       // 3. Atomically delete the Firestore document (The single source of truth)
