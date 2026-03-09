@@ -5,7 +5,7 @@ SignFlow is a modern digital document management and signing platform. It stream
 ## 🚀 Key Features
 
 - **Digital Signatures:** Securely sign PDF documents with custom signature inputs.
-- **AI Field Detection:** Powered by **Gemini 1.5 Flash**, the system automatically analyzes PDFs to suggest form field placements.
+- **AI Field Detection:** Powered by **Gemini 2.5 Flash**, the system automatically analyzes PDFs to suggest form field placements.
 - **Admin Dashboard:** Manage users, track document statuses (Pending, Signed), and view recent activity.
 - **Real-time Updates:** Integrated with **Firebase Firestore** for instant document state tracking.
 - **Secure Storage:** Documents are safely stored in **Firebase Storage**.
