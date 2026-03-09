@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { storage, db, auth } from '../firebase';
-import { ref, getDownloadURL } from 'firebase/storage';
+import { ref, getDownloadURL, deleteObject } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
 import { RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
 import { Document, Page, pdfjs } from 'react-pdf';
@@ -32,6 +32,12 @@ const getInputKey = (marker, idx) => {
   return `__field_${idx}__`;
 };
 
+const storageCompat = {
+  refFromURL: (url) => ({
+    delete: () => deleteObject(ref(storage, url)),
+  }),
+};
+
 const SignerView = () => {
   const { documentId } = useParams();
   const { showToast } = useNotification();
@@ -44,6 +50,8 @@ const SignerView = () => {
   const [isAlreadySigned, setIsAlreadySigned] = useState(false);
   const [missingFile, setMissingFile] = useState(false);
   const [signedPdfUrl, setSignedPdfUrl] = useState('');
+  const [originalPdfUrl, setOriginalPdfUrl] = useState('');
+  const [cleanupNotice, setCleanupNotice] = useState('');
   const [isSigned, setIsSigned] = useState(false);
   const [signMode, setSignMode] = useState('draw'); // 'draw' | 'upload'
   const [uploadedSignature, setUploadedSignature] = useState(null);
@@ -132,6 +140,7 @@ const SignerView = () => {
           }
 
           setMarkers(result.markers);
+          setOriginalPdfUrl(result.data?.originalPdfUrl || result.data?.fileUrl || '');
 
           // Enforce 2FA if the admin stored a signer phone number
           const phone = result.data?.signerPhone?.trim() || '';
@@ -341,6 +350,8 @@ const SignerView = () => {
     }
     setIsSubmitting(true);
     try {
+      const cleanupTargetUrl = originalPdfUrl.trim();
+
       // Build a per-marker-index formValues map that the API expects.
       // Uses getInputKey (same as the input cards) so values are always aligned.
       const formValues = {};
@@ -374,9 +385,26 @@ const SignerView = () => {
         signedPdfUrl: result.downloadUrl,
       });
 
+      let cleanupPromise = Promise.resolve();
+      if (cleanupTargetUrl && cleanupTargetUrl !== result.downloadUrl) {
+        setCleanupNotice('ניקוי אוטומטי של קובץ המקור פעיל.');
+        cleanupPromise = storageCompat
+          .refFromURL(cleanupTargetUrl)
+          .delete()
+          .catch((cleanupError) => {
+            console.warn('Original PDF cleanup failed after a successful signing flow:', cleanupError);
+          });
+      } else {
+        setCleanupNotice('');
+        if (cleanupTargetUrl && cleanupTargetUrl === result.downloadUrl) {
+          console.warn('Skipped original PDF cleanup because the original URL matches the signed URL.');
+        }
+      }
+
       setSignedPdfUrl(result.downloadUrl);
       setIsCompleted(true);
       showToast("Document signed successfully!", "success");
+      await cleanupPromise;
     } catch (error) {
       console.error('Error during the signing process:', error);
       showToast(`An error occurred: ${error.message}`, "error");
@@ -409,6 +437,7 @@ const SignerView = () => {
       <div className="success-screen">
         <h1>✓ Document Signed and Sent!</h1>
         <p>Thank you for completing the document.</p>
+        {cleanupNotice && <p dir="rtl">{cleanupNotice}</p>}
         <a 
           href={signedPdfUrl} 
           download 

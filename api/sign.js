@@ -1,7 +1,7 @@
 import { PDFDocument, rgb } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { initializeApp, getApps } from 'firebase/app';
-import { getStorage, ref, getBytes, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { getStorage, ref, getBytes, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -185,13 +185,6 @@ export default async function handler(req, res) {
 
     // Generate a public download URL with a token
     const downloadUrl = await getDownloadURL(signedFileRef);
-
-    // Delete the original unsigned PDF to save storage space — the signed copy is the canonical file
-    try {
-      await deleteObject(fileRef);
-    } catch {
-      // File may already be gone; non-fatal
-    }
 
     res.status(200).json({
       message: 'Success',

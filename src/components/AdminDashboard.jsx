@@ -8,12 +8,9 @@ import {
   Trash2,
   FileText,
   CheckCircle2,
-  XCircle,
   Loader2,
   Eye,
   Link2,
-  UploadCloud,
-  LogOut,
 } from 'lucide-react';
 import StatusBadge from './ui/StatusBadge';
 import { useAdminDashboard } from '../hooks/useAdminDashboard';
@@ -59,7 +56,6 @@ export default function AdminDashboard() {
     openEditModal,
     handleEditSubmit,
     handleCleanupOldDocuments,
-    handleCleanupZombies
   } = useAdminDashboard();
 
   return (
@@ -71,13 +67,6 @@ export default function AdminDashboard() {
             {userProfile?.firstName ? `Hello ${userProfile.firstName}` : ''}
           </span>
         )}
-        <button
-          onClick={handleCleanupZombies}
-          className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-lg transition-all text-sm"
-          title="Delete DB records where the file is missing in Storage"
-        >
-          Cleanup Missing Files
-        </button>
         <button
           onClick={() => (window.location.href = '/')}
           className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-all text-sm"

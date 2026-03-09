@@ -6,7 +6,10 @@
 // ────────────────
 // Collection : documents
 //   Document : {documentId}          (one per uploaded PDF)
-//     fileRef      string            Storage path, e.g. "pdfs/{id}.pdf"
+//     fileRef      string?           Storage path, e.g. "pdfs/{id}.pdf"
+//     fileUrl      string?           Legacy original PDF download URL
+//     originalPdfUrl string?         Canonical original PDF download URL
+//     signedPdfUrl string?           Signed PDF download URL after completion
 //     createdAt    string            ISO-8601 timestamp of the upload
 //     aiStatus     string            AI processing lifecycle:
 //                                    'pending' → 'processing' → 'done' | 'error'
@@ -36,8 +39,27 @@ import {
   updateDoc,
   onSnapshot
 } from 'firebase/firestore';
-import { ref, deleteObject, getDownloadURL } from 'firebase/storage';
+import { ref, deleteObject } from 'firebase/storage';
 import { logAction } from '../utils/logger';
+
+const applyDocumentDateFilters = (documents, startDate, endDate) => {
+  let filteredDocuments = documents;
+
+  if (startDate) {
+    const startIso = new Date(startDate).toISOString();
+    filteredDocuments = filteredDocuments.filter((documentItem) => (documentItem.createdAt || '') >= startIso);
+  }
+
+  if (endDate) {
+    const endBound = new Date(endDate);
+    endBound.setHours(23, 59, 59, 999);
+    const endIso = endBound.toISOString();
+    filteredDocuments = filteredDocuments.filter((documentItem) => (documentItem.createdAt || '') <= endIso);
+  }
+
+  filteredDocuments.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  return filteredDocuments;
+};
 
 // ---------------------------------------------------------------------------
 // saveDocument
@@ -155,23 +177,8 @@ export const getFilteredDocuments = async (uid, startDate, endDate) => {
 
   try {
     const querySnapshot = await getDocs(q);
-    let docs = querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-    // Apply optional date-range filtering client-side
-    if (startDate) {
-      const startIso = new Date(startDate).toISOString();
-      docs = docs.filter((d) => (d.createdAt || '') >= startIso);
-    }
-    if (endDate) {
-      const endBound = new Date(endDate);
-      endBound.setHours(23, 59, 59, 999);
-      const endIso = endBound.toISOString();
-      docs = docs.filter((d) => (d.createdAt || '') <= endIso);
-    }
-
-    // Sort most-recent first
-    docs.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-    return docs;
+    const docs = querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return applyDocumentDateFilters(docs, startDate, endDate);
   } catch (err) {
     console.error('[getFilteredDocuments] Firestore query failed:', err);
     throw err;
@@ -192,24 +199,8 @@ export const subscribeFilteredDocuments = (uid, startDate, endDate, onData, onEr
   const q = query(docsRef, where('clientId', '==', uid));
 
   return onSnapshot(q, (querySnapshot) => {
-    let docs = querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-    // Apply optional date-range filtering client-side
-    if (startDate) {
-      const startIso = new Date(startDate).toISOString();
-      docs = docs.filter((d) => (d.createdAt || '') >= startIso);
-    }
-    if (endDate) {
-      const endBound = new Date(endDate);
-      endBound.setHours(23, 59, 59, 999);
-      const endIso = endBound.toISOString();
-      docs = docs.filter((d) => (d.createdAt || '') <= endIso);
-    }
-
-    // Sort most-recent first
-    docs.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-    
-    onData(docs);
+    const docs = querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+    onData(applyDocumentDateFilters(docs, startDate, endDate));
   }, (err) => {
     console.error('[subscribeFilteredDocuments] Listener error:', err);
     if (onError) onError(err);
@@ -242,8 +233,12 @@ export const updateDocumentStatus = async (documentId, status, extraFields = {})
 export const deleteDocument = async (documentId, documentData) => {
   try {
     // 1. Delete actual PDF file from Firebase Storage
-    const storagePath = documentData.fileRef || `pdfs/${documentId}.pdf`;
-    const fileRef = ref(storage, storagePath);
+    const originalStorageTarget =
+      documentData.originalPdfUrl ||
+      documentData.fileUrl ||
+      documentData.fileRef ||
+      `pdfs/${documentId}.pdf`;
+    const fileRef = ref(storage, originalStorageTarget);
     try {
       await deleteObject(fileRef);
     } catch (e) {
@@ -251,7 +246,8 @@ export const deleteDocument = async (documentId, documentData) => {
     }
 
     // 1b. Attempt to delete signed PDF if it exists
-    const signedFileRef = ref(storage, `pdfs/signed_${documentId}.pdf`);
+    const signedStorageTarget = documentData.signedPdfUrl || `pdfs/signed_${documentId}.pdf`;
+    const signedFileRef = ref(storage, signedStorageTarget);
     try {
       await deleteObject(signedFileRef);
     } catch {
@@ -299,40 +295,3 @@ export const editDocumentName = async (documentId, newFileName) => {
   }
 };
 
-// ---------------------------------------------------------------------------
-// cleanupZombieRecords
-// Iterates through the database records and deletes any document that no longer
-// has a corresponding file in Firebase Storage.
-// ---------------------------------------------------------------------------
-export const cleanupZombieRecords = async () => {
-  try {
-    console.log('Starting cleanup of zombie records...');
-    const docsRef = collection(db, 'documents');
-    const querySnapshot = await getDocs(docsRef);
-    let deletedCount = 0;
-
-    for (const documentDoc of querySnapshot.docs) {
-      const data = documentDoc.data();
-      const storagePath = data.fileRef || `pdfs/${documentDoc.id}.pdf`;
-      const fileRef = ref(storage, storagePath);
-      
-      try {
-        // In the client SDK, the most reliable way to check existence is fetching the URL
-        await getDownloadURL(fileRef);
-      } catch (error) {
-        if (error.code === 'storage/object-not-found') {
-          console.warn(`Zombie record found! Doc ID: ${documentDoc.id}. Deleting...`);
-          // We found a zombie record, reuse deleteDocument to clean it out safely
-          await deleteDocument(documentDoc.id, data);
-          deletedCount++;
-        }
-      }
-    }
-    
-    console.log(`Cleanup complete. Deleted ${deletedCount} zombie records.`);
-    return deletedCount;
-  } catch (error) {
-    console.error('Error during cleanup:', error);
-    throw error;
-  }
-};

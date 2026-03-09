@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { subscribeFilteredDocuments, getFilteredDocuments, editDocumentName, cleanupZombieRecords } from '../services/dbService';
+import { subscribeFilteredDocuments, getFilteredDocuments, editDocumentName } from '../services/dbService';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 
@@ -39,7 +39,12 @@ export function useAdminDashboard() {
   const [deletingIds, setDeletingIds] = useState(new Set());
 
   useEffect(() => {
-    if (!currentUser?.uid) return;
+    if (!currentUser?.uid) {
+      setDocuments([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     
     // Subscribe to real-time updates
@@ -102,12 +107,14 @@ export function useAdminDashboard() {
 
     setDeletingIds(prev => new Set(prev).add(docObj.id));
     try {
+      const originalPdfUrl = docObj.originalPdfUrl || docObj.fileUrl;
+
       // Step 1: Storage Cleanup. Identify and delete:
       // - The original PDF file from Firebase Storage.
       // - The signed PDF file (if it exists) from Firebase Storage.
-      if (docObj.fileUrl) {
+      if (originalPdfUrl) {
         try {
-          await firebase.storage().refFromURL(docObj.fileUrl).delete();
+          await firebase.storage().refFromURL(originalPdfUrl).delete();
         } catch (e) {
           console.warn('Original storage file not found or already deleted', e);
         }
@@ -181,12 +188,14 @@ export function useAdminDashboard() {
 
       let deletedCount = 0;
       for (const docObj of oldDocs) {
+        const originalPdfUrl = docObj.originalPdfUrl || docObj.fileUrl;
+
         // Step 1: Storage Cleanup. Identify and delete:
         // - The original PDF file from Firebase Storage.
         // - The signed PDF file (if it exists) from Firebase Storage.
-        if (docObj.fileUrl) {
+        if (originalPdfUrl) {
           try {
-            await firebase.storage().refFromURL(docObj.fileUrl).delete();
+            await firebase.storage().refFromURL(originalPdfUrl).delete();
           } catch (e) {
             console.warn('Original storage file not found or already deleted', e);
           }
@@ -209,15 +218,9 @@ export function useAdminDashboard() {
       }
 
       showToast(`Document and associated files permanently deleted. (Removed ${deletedCount} old documents)`, 'success');
-      const count = await cleanupZombieRecords();
-      if (count > 0) {
-        showToast(`Successfully removed ${count} zombie record(s).`, 'success');
-      } else {
-        showToast('No missing files found! Your database is clean.', 'success');
-      }
     } catch (err) {
       console.error(err);
-      showToast('Failed to cleanup zombie records.', 'error');
+      showToast('Failed to cleanup old documents.', 'error');
     } finally {
       setLoading(false);
     }

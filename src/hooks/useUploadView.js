@@ -264,6 +264,8 @@ export function useUploadView() {
     await setDoc(documentRef, {
       fileName,
       fileUrl,
+      originalPdfUrl: fileUrl,
+      fileRef: `pdfs/${fileId}.pdf`,
       clientId:  currentUser.uid,
       createdAt: new Date().toISOString(),
       signerPhone: finalPhone,
