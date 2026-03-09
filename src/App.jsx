@@ -9,42 +9,45 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AdminDashboard from './components/AdminDashboard';
 // AuthProvider must wrap the entire app so every component can read auth state
 import { AuthProvider } from './context/AuthContext';
+import { NotificationProvider } from './context/NotificationContext';
 
 function App() {
   return (
     <BrowserRouter>
       {/* AuthProvider sits inside BrowserRouter so Login.jsx can use useNavigate */}
       <AuthProvider>
-        <div className="app-container">
-          <Routes>
-            {/* Public route — anyone with the link can sign a document */}
-            <Route path="/sign/:documentId" element={<SignerView />} />
+        <NotificationProvider>
+          <div className="app-container">
+            <Routes>
+              {/* Public route — anyone with the link can sign a document */}
+              <Route path="/sign/:documentId" element={<SignerView />} />
 
-            {/* Public route — the login page */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<SignUp />} />
+              {/* Public route — the login page */}
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<SignUp />} />
 
-            {/* Protected route — only noam.hadad23@gmail.com can access the upload page */}
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <UploadView />
-                </ProtectedRoute>
-              }
-            />
+              {/* Protected route — only noam.hadad23@gmail.com can access the upload page */}
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <UploadView />
+                  </ProtectedRoute>
+                }
+              />
 
-            {/* Protected route — Admin Dashboard */}
-            <Route
-              path="/admin"
-              element={
-                <ProtectedRoute>
-                  <AdminDashboard />
-                </ProtectedRoute>
-              }
-            />
-          </Routes>
-        </div>
+              {/* Protected route — Admin Dashboard */}
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute>
+                    <AdminDashboard />
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </div>
+        </NotificationProvider>
       </AuthProvider>
     </BrowserRouter>
   );

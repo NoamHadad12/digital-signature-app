@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { storage, db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
@@ -16,10 +17,10 @@ export const FIELD_TYPES = [
 export function useUploadView() {
   const navigate = useNavigate();
   const { logout, currentUser, userProfile } = useAuth();
+  const { showToast } = useNotification();
   
   const [file, setFile] = useState(null);
   const [fileUrl, setFileUrl] = useState(null);
-  const [fileError, setFileError] = useState('');
   const [numPages, setNumPages] = useState(null);
   
   const [fields, setFields] = useState([]);
@@ -29,7 +30,6 @@ export function useUploadView() {
   const [isCopied, setIsCopied] = useState(false);
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiError, setAiError] = useState(null);
   const [editingSuggestionId, setEditingSuggestionId] = useState(null);
   const [editingLabel, setEditingLabel] = useState('');
 
@@ -50,17 +50,15 @@ export function useUploadView() {
     const selectedFile = e.target.files[0];
 
     if (selectedFile && selectedFile.size > 10 * 1024 * 1024) {
-      setFileError('File is too large! Maximum allowed size is 10MB.');
+      showToast('File is too large! Maximum allowed size is 10MB.', 'error');
       e.target.value = '';
       return;
     }
 
-    setFileError('');
     setFile(selectedFile);
     setGeneratedLink('');
     setIsCopied(false);
     setFields([]);
-    setAiError(null);
 
     if (selectedFile) {
       setFileUrl(URL.createObjectURL(selectedFile));
@@ -147,7 +145,6 @@ export function useUploadView() {
   const handleAnalyze = async () => {
     if (!file) return;
     setIsAnalyzing(true);
-    setAiError(null);
     setFields((prev) => prev.filter((f) => f.confirmed));
 
     try {
@@ -178,10 +175,7 @@ export function useUploadView() {
       console.log("Suggestions received:", raw);
 
       if (!raw || raw.length === 0) {
-        setAiError({
-          title: 'No fields detected',
-          description: "The AI couldn't automatically find signature or date fields on this document. Please add them manually using the buttons above.",
-        });
+        showToast("The AI couldn't automatically find signature or date fields. Please add them manually.", 'info');
         return;
       }
 
@@ -212,15 +206,9 @@ export function useUploadView() {
       console.error('[AI] Analysis error:', error);
       const msg = error.message || '';
       if (msg.includes('429') || /quota/i.test(msg)) {
-        setAiError({
-          title: 'Daily Limit Reached',
-          description: 'The AI has reached its free-tier limit. Please wait about 60 seconds and try again, or add the fields manually.',
-        });
+        showToast('Daily Limit Reached. The AI has reached its free-tier limit. Please wait about 60 seconds and try again.', 'error');
       } else {
-        setAiError({
-          title: 'Oops! The AI needs a moment',
-          description: 'We hit a small snag while trying to read your document, but you can give it another try or simply add the fields yourself.',
-        });
+        showToast('Oops! We hit a small snag while trying to read your document. Please give it another try.', 'error');
       }
     } finally {
       setIsAnalyzing(false);
@@ -286,17 +274,17 @@ export function useUploadView() {
 
   const handleUpload = async () => {
     if (!file) {
-      alert('Please select a PDF file first.');
+      showToast('Please select a PDF file first.', 'error');
       return;
     }
     const confirmedFields  = fields.filter((f) => f.confirmed);
     const pendingFields    = fields.filter((f) => !f.confirmed);
     if (confirmedFields.length === 0 && pendingFields.length > 0) {
-      alert(`You have ${pendingFields.length} pending AI suggestions. Please approve or reject them before uploading.`);
+      showToast(`You have ${pendingFields.length} pending AI suggestions. Please approve or reject them before uploading.`, 'error');
       return;
     }
     if (confirmedFields.length === 0) {
-      alert('Please drag on the document to place at least one field.');
+      showToast('Please drag on the document to place at least one field.', 'error');
       return;
     }
     
@@ -315,12 +303,13 @@ export function useUploadView() {
 
       const link = `${window.location.origin}/sign/${fileId}`;
       setGeneratedLink(link);
+      showToast('Upload Successful!', 'success');
     } catch (error) {
       console.error("=== FIREBASE UPLOAD ERROR ===");
       console.error(error);
       console.error("Error Code:", error?.code);
       console.error("Error Message:", error?.message);
-      alert(`Upload failed: ${error?.message || "Unknown error occurred. Check browser console."}`);
+      showToast(`Upload failed: ${error?.message || "Unknown error occurred."}`, 'error');
     } finally {
       setUploading(false);
     }
@@ -329,9 +318,11 @@ export function useUploadView() {
   const copyToClipboard = () => {
     navigator.clipboard.writeText(generatedLink).then(() => {
       setIsCopied(true);
+      showToast('Link copied to clipboard!', 'success');
       setTimeout(() => setIsCopied(false), 2000);
     }, (err) => {
       console.error('Failed to copy link: ', err);
+      showToast('Failed to copy link', 'error');
     });
   };
 
@@ -345,7 +336,6 @@ export function useUploadView() {
     navigate,
     logout,
     userProfile,
-    fileError,
     fileUrl,
     generatedLink,
     isCopied,
@@ -356,8 +346,6 @@ export function useUploadView() {
     setActiveFieldType,
     uploading,
     isAnalyzing,
-    setAiError,
-    aiError,
     editingSuggestionId,
     setEditingSuggestionId,
     editingLabel,

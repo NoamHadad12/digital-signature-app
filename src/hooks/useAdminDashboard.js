@@ -1,25 +1,21 @@
 import { useState, useEffect } from 'react';
 import { getFilteredDocuments, deleteDocument, editDocumentName } from '../services/dbService';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
 
 export function useAdminDashboard() {
   const { currentUser, logout, userProfile } = useAuth();
+  const { showToast, confirm } = useNotification();
 
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading]     = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate]     = useState('');
 
-  const [toast, setToast] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editDocId, setEditDocId] = useState(null);
   const [newFileName, setNewFileName] = useState('');
   const [copiedId, setCopiedId] = useState(null);
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3500);
-  };
 
   const fetchDocuments = async () => {
     setLoading(true);
@@ -64,7 +60,14 @@ export function useAdminDashboard() {
   };
 
   const handleDelete = async (docObj) => {
-    if (!window.confirm(`Are you sure you want to permanently delete "${docObj.fileName}"?`)) return;
+    const isConfirmed = await confirm({
+      title: 'Delete Document',
+      description: `Are you sure you want to permanently delete "${docObj.fileName}"?`,
+      confirmText: 'Delete',
+      confirmVariant: 'danger'
+    });
+    if (!isConfirmed) return;
+
     try {
       await deleteDocument(docObj.id, docObj);
       showToast('Document deleted successfully');
@@ -105,7 +108,6 @@ export function useAdminDashboard() {
     setStartDate,
     endDate,
     setEndDate,
-    toast,
     isEditing,
     setIsEditing,
     editDocId,

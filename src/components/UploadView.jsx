@@ -13,7 +13,6 @@ const UploadView = () => {
     navigate,
     logout,
     userProfile,
-    fileError,
     fileUrl,
     generatedLink,
     isCopied,
@@ -24,8 +23,6 @@ const UploadView = () => {
     setActiveFieldType,
     uploading,
     isAnalyzing,
-    setAiError,
-    aiError,
     editingSuggestionId,
     setEditingSuggestionId,
     editingLabel,
@@ -99,22 +96,6 @@ const UploadView = () => {
         />
       </div>
 
-      {/* Inline error shown when the selected file exceeds the size limit */}
-      {fileError && (
-        <p style={{
-          color: '#dc2626',
-          backgroundColor: '#fef2f2',
-          border: '1px solid #fca5a5',
-          borderRadius: '6px',
-          padding: '8px 12px',
-          marginTop: '10px',
-          fontSize: '0.9rem',
-          fontWeight: 500,
-        }}>
-          {fileError}
-        </p>
-      )}
-
       {/* Render PDF Preview to select signature location */}
       {fileUrl && !generatedLink && (
         <div style={{ marginTop: '20px' }}>
@@ -174,58 +155,6 @@ const UploadView = () => {
               )}
             </button>
           </div>
-
-          {/* AI error message — shown as a dismissible red banner with Retry/Close actions */}
-          {aiError && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 10,
-              color: '#b91c1c',
-              background: '#fef2f2',
-              border: '1px solid #fca5a5',
-              borderRadius: 6,
-              padding: '10px 14px',
-              fontSize: '0.85rem',
-              marginTop: 8,
-            }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, marginBottom: 2 }}>⚠️ {aiError.title}</div>
-                <div style={{ color: '#991b1b', fontWeight: 400 }}>{aiError.description}</div>
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginTop: 1 }}>
-                <button
-                  onClick={() => { setAiError(null); handleAnalyze(); }}
-                  style={{
-                    background: '#dc2626',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 4,
-                    padding: '3px 10px',
-                    cursor: 'pointer',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                  }}
-                >
-                  Retry
-                </button>
-                <button
-                  onClick={() => setAiError(null)}
-                  style={{
-                    background: 'transparent',
-                    color: '#b91c1c',
-                    border: '1px solid #fca5a5',
-                    borderRadius: 4,
-                    padding: '3px 8px',
-                    cursor: 'pointer',
-                    fontSize: '0.8rem',
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Pending AI suggestions banner */}
           {fields.some((f) => !f.confirmed) && (

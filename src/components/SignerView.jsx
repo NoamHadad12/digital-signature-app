@@ -9,6 +9,7 @@ import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { getMarkerColor, getMarkerLabel, getMarkerKey, useWindowWidth } from '../utils/pdfHelpers';
 import { fetchDocument } from '../services/dbService';
+import { useNotification } from '../context/NotificationContext';
 
 // Set the worker source from a reliable CDN to ensure compatibility
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -18,6 +19,7 @@ const SignatureCanvas = SignaturePad.default || SignaturePad;
 
 const SignerView = () => {
   const { documentId } = useParams();
+  const { showToast } = useNotification();
   const [pdfUrl, setPdfUrl] = useState(null);
   // markers is an array of { page, nx, ny, nw, nh }
   const [markers, setMarkers] = useState([]);
@@ -128,7 +130,10 @@ const SignerView = () => {
     textCards.every(({ key }) => (fieldValues[key] || '').trim() !== '');
 
   const handleFinish = async () => {
-    if (!isFormReady) return;
+    if (!isFormReady) {
+      showToast("Please sign and fill all fields before submitting.", "error");
+      return;
+    }
     setIsSubmitting(true);
     try {
       // Build a per-marker-index formValues map that the API expects
@@ -165,9 +170,10 @@ const SignerView = () => {
 
       setSignedPdfUrl(result.downloadUrl);
       setIsCompleted(true);
+      showToast("Document signed successfully!", "success");
     } catch (error) {
       console.error('Error during the signing process:', error);
-      alert(`An error occurred: ${error.message}`);
+      showToast(`An error occurred: ${error.message}`, "error");
     } finally {
       setIsSubmitting(false);
     }
