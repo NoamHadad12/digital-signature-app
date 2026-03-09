@@ -82,7 +82,7 @@ export default function AdminDashboard() {
       </header>
 
       {/* Page Content */}
-      <main className="max-w-6xl mx-auto w-full bg-white rounded-2xl shadow-xl p-8 mt-8 border border-slate-100 relative top-16">
+      <main className="max-w-7xl mx-auto w-full bg-white rounded-2xl shadow-xl p-6 mt-4 border border-slate-100 relative top-12">
 
         {/* Page Header */}
         <div className="mb-8">
@@ -222,7 +222,7 @@ export default function AdminDashboard() {
                     className="group hover:bg-blue-50/50 transition-colors duration-100 border-b border-slate-100"
                   >
                     {/* File Name with document icon */}
-                    <td className="p-4">
+                    <td className="p-4 w-1/3">
                       <div className="flex items-center gap-3">
                         <div className="bg-blue-50 p-1.5 rounded-md shrink-0">
                           <FileText size={14} className="text-blue-500" />
@@ -232,13 +232,16 @@ export default function AdminDashboard() {
                             href={docObj.signedPdfUrl} 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline truncate max-w-xs cursor-pointer"
-                            title="Download Signed PDF"
+                            className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline truncate max-w-md lg:max-w-lg cursor-pointer"
+                            title={docObj.fileName}
                           >
                             {docObj.fileName}
                           </a>
                         ) : (
-                          <span className="text-sm font-medium text-gray-800 truncate max-w-xs">
+                          <span 
+                            className="text-sm font-medium text-gray-800 truncate max-w-md lg:max-w-lg cursor-default"
+                            title={docObj.fileName}
+                          >
                             {docObj.fileName}
                           </span>
                         )}
