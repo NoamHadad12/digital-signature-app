@@ -40,7 +40,7 @@ import {
   updateDoc,
   onSnapshot
 } from 'firebase/firestore';
-import { ref, deleteObject } from 'firebase/storage';
+import { ref, deleteObject, getMetadata } from 'firebase/storage';
 import { logAction } from '../utils/logger';
 
 const applyDocumentDateFilters = (documents, startDate, endDate) => {
@@ -82,6 +82,27 @@ const extractStoragePath = (urlOrPath) => {
   }
 
   return urlOrPath;
+};
+
+// ---------------------------------------------------------------------------
+// checkStorageFileExists
+// Pings Firebase Storage using getMetadata (cheaper than a full download).
+// Returns true if the file exists, false on 404.
+// Returns true for any other error (network/permissions) to avoid falsely
+// deleting records we cannot verify.
+// ---------------------------------------------------------------------------
+const checkStorageFileExists = async (urlOrPath) => {
+  const storagePath = extractStoragePath(urlOrPath);
+  if (!storagePath) return false;
+  try {
+    await getMetadata(ref(storage, storagePath));
+    return true;
+  } catch (err) {
+    if (err?.code === 'storage/object-not-found') return false;
+    // Network error, permissions issue, etc. — keep the record to be safe.
+    console.warn('[checkStorageFileExists] Could not verify file existence:', storagePath, err);
+    return true;
+  }
 };
 
 const deleteStorageAsset = async (storageTarget, assetLabel) => {
@@ -273,32 +294,83 @@ export const subscribeFilteredDocuments = (uid, startDate, endDate, onData, onEr
   const q = query(docsRef, where('clientId', '==', uid));
 
   return onSnapshot(q, { includeMetadataChanges: true }, (querySnapshot) => {
-    const allDocs = [];
-    const ghostIds = [];
-    querySnapshot.docs.forEach((d) => {
-      const data = d.data();
-      const ghost = isGhostRecord(data);
-      if (ghost) {
-        console.warn(`[subscribeFilteredDocuments] Ghost record detected: ${d.id}`, data);
-        ghostIds.push(d.id);
-        return; // Exclude ghost records from the dashboard
-      }
-      allDocs.push({ id: d.id, ...data, _isGhost: false });
-    });
+    // Wrap in an async IIFE so we can await parallel storage existence checks.
+    (async () => {
+      const candidateDocs = [];
+      const ghostIds = [];
 
-    // Auto-cleanup ghost records in the background (best-effort)
-    if (ghostIds.length > 0) {
-      console.log(`[subscribeFilteredDocuments] Auto-deleting ${ghostIds.length} ghost record(s)`);
-      ghostIds.forEach((ghostId) => {
-        deleteDoc(doc(db, 'documents', ghostId)).catch((err) =>
-          console.warn(`[subscribeFilteredDocuments] Ghost cleanup failed for ${ghostId}:`, err)
-        );
+      querySnapshot.docs.forEach((d) => {
+        const data = d.data();
+        if (isGhostRecord(data)) {
+          console.warn(`[subscribeFilteredDocuments] Ghost record detected: ${d.id}`, data);
+          ghostIds.push(d.id);
+          return; // Exclude ghost records from the dashboard
+        }
+        candidateDocs.push({ id: d.id, ...data, _isGhost: false });
       });
-    }
 
-    const fromServer = !querySnapshot.metadata.fromCache;
-    console.log(`[subscribeFilteredDocuments] Snapshot received: ${allDocs.length} documents (source: ${fromServer ? 'server' : 'cache'})`);
-    onData(applyDocumentDateFilters(allDocs, startDate, endDate), fromServer);
+      // Auto-cleanup Firestore records that are missing required fields (ghost records).
+      if (ghostIds.length > 0) {
+        console.log(`[subscribeFilteredDocuments] Auto-deleting ${ghostIds.length} ghost record(s)`);
+        ghostIds.forEach((ghostId) => {
+          deleteDoc(doc(db, 'documents', ghostId)).catch((err) =>
+            console.warn(`[subscribeFilteredDocuments] Ghost cleanup failed for ${ghostId}:`, err)
+          );
+        });
+      }
+
+      // Check Storage existence for every candidate document in parallel.
+      // For signed documents the signed PDF is authoritative; otherwise check the original.
+      const checkResults = await Promise.allSettled(
+        candidateDocs.map(async (docObj) => {
+          const isSigned = (docObj.status || '').toLowerCase() === 'signed';
+          const primaryRef = isSigned
+            ? (docObj.signedPdfUrl || docObj.originalPdfUrl || docObj.fileUrl || docObj.fileRef)
+            : (docObj.originalPdfUrl || docObj.fileUrl || docObj.fileRef);
+
+          // No storage reference at all — keep the record (e.g. still processing).
+          if (!primaryRef) return { docObj, exists: true };
+
+          const exists = await checkStorageFileExists(primaryRef);
+          return { docObj, exists };
+        })
+      );
+
+      const survivingDocs = [];
+      const orphanIds = [];
+
+      checkResults.forEach((result) => {
+        if (result.status === 'fulfilled') {
+          const { docObj, exists } = result.value;
+          if (exists) {
+            survivingDocs.push(docObj);
+          } else {
+            console.warn(`[subscribeFilteredDocuments] Orphaned record (storage file missing): ${docObj.id}`);
+            orphanIds.push(docObj.id);
+          }
+        } else {
+          // The check itself threw unexpectedly — keep the doc to avoid a false deletion.
+          console.error('[subscribeFilteredDocuments] Storage check threw unexpectedly:', result.reason);
+        }
+      });
+
+      // Auto-delete Firestore records whose Storage files are confirmed gone.
+      if (orphanIds.length > 0) {
+        console.log(`[subscribeFilteredDocuments] Auto-deleting ${orphanIds.length} orphaned record(s)`);
+        orphanIds.forEach((orphanId) => {
+          deleteDoc(doc(db, 'documents', orphanId)).catch((err) =>
+            console.warn(`[subscribeFilteredDocuments] Orphan cleanup failed for ${orphanId}:`, err)
+          );
+        });
+      }
+
+      const fromServer = !querySnapshot.metadata.fromCache;
+      console.log(`[subscribeFilteredDocuments] Snapshot: ${survivingDocs.length} valid documents (source: ${fromServer ? 'server' : 'cache'})`);
+      onData(applyDocumentDateFilters(survivingDocs, startDate, endDate), fromServer);
+    })().catch((err) => {
+      console.error('[subscribeFilteredDocuments] Async processing error:', err);
+      if (onError) onError(err);
+    });
   }, (err) => {
     console.error('[subscribeFilteredDocuments] Listener error:', err);
     if (onError) onError(err);
