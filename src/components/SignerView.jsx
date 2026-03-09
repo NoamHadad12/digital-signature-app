@@ -26,6 +26,8 @@ const SignerView = () => {
   const [isCompleted, setIsCompleted] = useState(false);
   const [signedPdfUrl, setSignedPdfUrl] = useState('');
   const [isSigned, setIsSigned] = useState(false);
+  const [signMode, setSignMode] = useState('draw'); // 'draw' | 'upload'
+  const [uploadedSignature, setUploadedSignature] = useState(null);
   // fieldValues is keyed by getMarkerKey() — one value shared across all markers with the same key
   const [fieldValues, setFieldValues] = useState({
     __date__: new Date().toLocaleDateString('en-GB'), // Pre-fill today as DD/MM/YYYY
@@ -35,10 +37,25 @@ const SignerView = () => {
   const windowWidth = useWindowWidth();
   const sigCanvas = useRef(null);
 
-  // Clear the signature pad and reset the signed flag
   const handleClearSignature = () => {
-    sigCanvas.current?.clear();
+    if (signMode === 'draw') {
+      sigCanvas.current?.clear();
+    } else {
+      setUploadedSignature(null);
+    }
     setIsSigned(false);
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file && (file.type === 'image/png' || file.type === 'image/jpeg' || file.type === 'image/jpg')) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setUploadedSignature(reader.result);
+        setIsSigned(true);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   useEffect(() => {
@@ -121,9 +138,14 @@ const SignerView = () => {
         if (key) formValues[idx] = fieldValues[key] || '';
       });
 
-      const signatureData = hasSignature
-        ? sigCanvas.current.getCanvas().toDataURL('image/png')
-        : null;
+      let signatureData = null;
+      if (hasSignature) {
+        if (signMode === 'upload') {
+          signatureData = uploadedSignature;
+        } else {
+          signatureData = sigCanvas.current.getCanvas().toDataURL('image/png');
+        }
+      }
 
       const response = await fetch('/api/sign', {
         method: 'POST',
@@ -251,20 +273,53 @@ const SignerView = () => {
               {/* Signature card */}
               {hasSignature && (
                 <div className="form-card form-card--sig">
-                  <div className="form-card-header" style={{ color: '#e53e3e', borderBottomColor: '#e53e3e1a' }}>
-                    <span className="form-card-label">Signature</span>
+                  <div className="form-card-header" style={{ color: '#e53e3e', borderBottomColor: '#e53e3e1a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <span className="form-card-label">Signature</span>
+                      <div className="flex bg-gray-100 rounded-lg p-1 ml-2">
+                        <button
+                          className={`px-3 py-1 text-sm rounded-md transition-colors ${signMode === 'draw' ? 'bg-white shadow-sm font-bold text-red-600' : 'text-gray-500 hover:text-gray-700'}`}
+                          onClick={() => { setSignMode('draw'); setIsSigned(false); sigCanvas.current?.clear(); }}
+                        >
+                          Draw
+                        </button>
+                        <button
+                          className={`px-3 py-1 text-sm rounded-md transition-colors ${signMode === 'upload' ? 'bg-white shadow-sm font-bold text-red-600' : 'text-gray-500 hover:text-gray-700'}`}
+                          onClick={() => { setSignMode('upload'); setIsSigned(!!uploadedSignature); }}
+                        >
+                          Upload
+                        </button>
+                      </div>
+                    </div>
                     <button className="form-clear-btn" onClick={handleClearSignature} title="Clear signature">↺</button>
                   </div>
                   <div className="form-card-body">
-                    <div className="form-sig-wrap" style={{ borderColor: isSigned ? '#e53e3e55' : '#e0e0e0' }}>
-                      <SignatureCanvas
-                        ref={sigCanvas}
-                        penColor="#1a1a1a"
-                        onBegin={() => setIsSigned(true)}
-                        canvasProps={{ className: 'sigCanvas' }}
-                      />
-                      {!isSigned && <div className="form-sig-placeholder">Sign here</div>}
-                    </div>
+                    {signMode === 'draw' ? (
+                      <div className="form-sig-wrap" style={{ borderColor: isSigned ? '#e53e3e55' : '#e0e0e0' }}>
+                        <SignatureCanvas
+                          ref={sigCanvas}
+                          penColor="#1a1a1a"
+                          onBegin={() => setIsSigned(true)}
+                          canvasProps={{ className: 'sigCanvas' }}
+                        />
+                        {!isSigned && <div className="form-sig-placeholder">Sign here</div>}
+                      </div>
+                    ) : (
+                      <div className="form-sig-wrap" style={{ display: 'flex', alignItems: 'center', justifyItems: 'center', padding: '10px', height: '110px', borderColor: isSigned ? '#e53e3e55' : '#e0e0e0' }}>
+                        {uploadedSignature ? (
+                          <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <img src={uploadedSignature} alt="Uploaded signature" style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
+                          </div>
+                        ) : (
+                          <label style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#666' }}>
+                            <span style={{ fontSize: '24px', marginBottom: '8px' }}>📁</span>
+                            <span style={{ fontSize: '14px', fontWeight: '500' }}>Click to upload image</span>
+                            <span style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>PNG, JPG up to 2MB</span>
+                            <input type="file" accept="image/png, image/jpeg, image/jpg" onChange={handleFileUpload} style={{ display: 'none' }} />
+                          </label>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
