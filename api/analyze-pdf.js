@@ -101,29 +101,36 @@ async function callGemini({ imageBase64, mimeType, pageNumber }) {
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel(
-    {
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 1024,
-        responseMimeType: 'application/json',
-      },
+  // Using gemini-1.5-flash without v1beta, as the SDK handles versions natively
+  const model = genAI.getGenerativeModel({
+    model: MODEL_NAME,
+    generationConfig: {
+      temperature: 0,
+      maxOutputTokens: 1024,
+      responseMimeType: 'application/json',
     },
-    { apiVersion: 'v1beta' }
-  );
+  });
 
-  const result = await model.generateContent([
-    { text: `Page ${pageNumber}. ${ANALYSIS_PROMPT}` },
-    {
-      inlineData: {
-        mimeType: mimeType || 'image/jpeg',
-        data: cleanBase64,
+  try {
+    const result = await model.generateContent([
+      { text: `Page ${pageNumber}. ${ANALYSIS_PROMPT}` },
+      {
+        inlineData: {
+          mimeType: mimeType || 'image/jpeg',
+          data: cleanBase64,
+        },
       },
-    },
-  ]);
+    ]);
 
-  return parseGeminiJson(result.response.text());
+    return parseGeminiJson(result.response.text());
+  } catch (error) {
+    console.warn(`[analyze-pdf] Gemini API error: ${error.message}`);
+    // If ModelNotSupported or 404 is thrown, return empty array to trigger client fallback
+    if (error.status === 404 || error.message?.includes('404') || error.message?.includes('not found') || error.message?.includes('ModelNotSupported')) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export default async function handler(req, res) {

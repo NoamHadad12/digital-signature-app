@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
-import { subscribeFilteredDocuments, getFilteredDocuments, editDocumentName, deleteDocument } from '../services/dbService';
+import { subscribeFilteredDocuments, editDocumentName } from '../services/dbService';
+import { doc, deleteDoc } from 'firebase/firestore';
+import { ref, deleteObject } from 'firebase/storage';
+import { db, storage } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 
@@ -98,8 +101,45 @@ export function useAdminDashboard() {
 
     setDeletingIds(prev => new Set(prev).add(docObj.id));
     try {
-      await deleteDocument(docObj.id, docObj);
-      // DO NOT manually update state here — onSnapshot handles it as the single source of truth
+      // 1. Extract storage paths
+      const extractStoragePath = (urlOrPath) => {
+        if (!urlOrPath) return null;
+        if (!urlOrPath.startsWith('http')) return urlOrPath;
+        try {
+          const url = new URL(urlOrPath);
+          const match = url.pathname.match(/\/o\/(.+)$/);
+          if (match) return decodeURIComponent(match[1]);
+        } catch {
+          // ignore parsing errors
+        }
+        return urlOrPath;
+      };
+
+      const originalStoragePath = extractStoragePath(
+        docObj.fileRef || docObj.originalPdfUrl || docObj.fileUrl
+      ) || `pdfs/${docObj.id}.pdf`;
+
+      const signedStoragePath = extractStoragePath(docObj.signedPdfUrl) ||
+        ((docObj.status || '').toLowerCase() === 'signed' ? `pdfs/signed_${docObj.id}.pdf` : null);
+
+      // 2. Best effort to delete from Storage (do not block Firestore deletion if this fails e.g 404)
+      const attemptStorageDelete = async (path) => {
+        if (!path) return;
+        try {
+          await deleteObject(ref(storage, path));
+        } catch (err) {
+          console.warn(`[handleDelete] Storage deletion skipped for ${path}`, err);
+        }
+      };
+
+      await attemptStorageDelete(originalStoragePath);
+      if (signedStoragePath && signedStoragePath !== originalStoragePath) {
+        await attemptStorageDelete(signedStoragePath);
+      }
+
+      // 3. Atomically delete the Firestore document (The single source of truth)
+      await deleteDoc(doc(db, 'documents', docObj.id));
+
       showToast('Document and associated files permanently deleted.');
     } catch (err) {
       console.error('[handleDelete] Deletion failed:', err);
@@ -134,58 +174,6 @@ export function useAdminDashboard() {
     }
   };
 
-  const handleCleanupOldDocuments = async () => {
-    // Count ghost records for the confirmation message
-    const ghostCount = documents.filter(d => d._isGhost).length;
-    
-    const isConfirmed = await confirm({
-      title: 'Cleanup Documents',
-      description: `This will permanently delete:\n• All documents older than 30 days\n• ${ghostCount} ghost/corrupted records\n\nThis action cannot be undone.`,
-      confirmText: 'Cleanup',
-      confirmVariant: 'danger'
-    });
-    
-    if (!isConfirmed) return;
-
-    setLoading(true);
-    try {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const cutoffIso = thirtyDaysAgo.toISOString();
-
-      const allDocs = await getFilteredDocuments(currentUser?.uid, '', '');
-      
-      // Include both old docs AND ghost records
-      const docsToDelete = allDocs.filter((d) => 
-        (d.createdAt || '') < cutoffIso || d._isGhost
-      );
-
-      let deletedCount = 0;
-      let failedCount = 0;
-      
-      for (const docObj of docsToDelete) {
-        try {
-          await deleteDocument(docObj.id, docObj);
-          deletedCount++;
-        } catch (err) {
-          console.error(`[handleCleanupOldDocuments] Failed to delete ${docObj.id}:`, err);
-          failedCount++;
-        }
-      }
-
-      if (failedCount > 0) {
-        showToast(`Cleanup complete: ${deletedCount} deleted, ${failedCount} failed.`, 'warning');
-      } else {
-        showToast(`Cleanup complete: removed ${deletedCount} documents.`, 'success');
-      }
-    } catch (err) {
-      console.error('[handleCleanupOldDocuments] Cleanup failed:', err);
-      showToast('Failed to cleanup documents.', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return {
     currentUser,
     userProfile,
@@ -209,7 +197,6 @@ export function useAdminDashboard() {
     handleCopyLink,
     handleDelete,
     openEditModal,
-    handleEditSubmit,
-    handleCleanupOldDocuments
+    handleEditSubmit
   };
 }
