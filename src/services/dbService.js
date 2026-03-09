@@ -272,21 +272,33 @@ export const subscribeFilteredDocuments = (uid, startDate, endDate, onData, onEr
   const docsRef = collection(db, 'documents');
   const q = query(docsRef, where('clientId', '==', uid));
 
-  return onSnapshot(q, (querySnapshot) => {
+  return onSnapshot(q, { includeMetadataChanges: true }, (querySnapshot) => {
     const allDocs = [];
+    const ghostIds = [];
     querySnapshot.docs.forEach((d) => {
       const data = d.data();
       const ghost = isGhostRecord(data);
       if (ghost) {
-        // Include ghost records so users can see and hard-delete them.
-        // The onSnapshot listener will remove the row the instant deleteDoc() completes.
         console.warn(`[subscribeFilteredDocuments] Ghost record detected: ${d.id}`, data);
+        ghostIds.push(d.id);
+        return; // Exclude ghost records from the dashboard
       }
-      allDocs.push({ id: d.id, ...data, _isGhost: ghost });
+      allDocs.push({ id: d.id, ...data, _isGhost: false });
     });
 
-    console.log(`[subscribeFilteredDocuments] Snapshot received: ${allDocs.length} documents (${allDocs.filter(d => d._isGhost).length} ghost)`);
-    onData(applyDocumentDateFilters(allDocs, startDate, endDate));
+    // Auto-cleanup ghost records in the background (best-effort)
+    if (ghostIds.length > 0) {
+      console.log(`[subscribeFilteredDocuments] Auto-deleting ${ghostIds.length} ghost record(s)`);
+      ghostIds.forEach((ghostId) => {
+        deleteDoc(doc(db, 'documents', ghostId)).catch((err) =>
+          console.warn(`[subscribeFilteredDocuments] Ghost cleanup failed for ${ghostId}:`, err)
+        );
+      });
+    }
+
+    const fromServer = !querySnapshot.metadata.fromCache;
+    console.log(`[subscribeFilteredDocuments] Snapshot received: ${allDocs.length} documents (source: ${fromServer ? 'server' : 'cache'})`);
+    onData(applyDocumentDateFilters(allDocs, startDate, endDate), fromServer);
   }, (err) => {
     console.error('[subscribeFilteredDocuments] Listener error:', err);
     if (onError) onError(err);
@@ -379,9 +391,12 @@ export const deleteDocument = async (documentId, documentData = {}) => {
     }
     console.log(`[deleteDocument] Verified: Firestore record ${documentId} successfully deleted`);
   } catch (verifyErr) {
-    // If getDocFromServer throws because document doesn't exist, that's actually success
-    if (verifyErr.code !== 'not-found') {
-      console.warn('[deleteDocument] Verification check encountered error:', verifyErr);
+    // getDocFromServer throws when document doesn't exist — that's success
+    if (verifyErr.code === 'not-found') {
+      console.log(`[deleteDocument] Verified: document ${documentId} gone (not-found).`);
+    } else {
+      // Re-throw real errors (including "still exists" from above)
+      throw verifyErr;
     }
   }
 

@@ -34,14 +34,15 @@ export function useAdminDashboard() {
 
     setLoading(true);
     
-    // Subscribe to real-time updates
+    // Subscribe to real-time updates (includes metadata changes for cache awareness)
     const unsubscribe = subscribeFilteredDocuments(
       currentUser.uid,
       appliedFilters.start,
       appliedFilters.end,
-      (docs) => {
+      (docs, fromServer) => {
         setDocuments(docs);
-        setLoading(false);
+        // Only dismiss the loading spinner once we have server-confirmed data
+        if (fromServer) setLoading(false);
       },
       (err) => {
         console.error(err);
