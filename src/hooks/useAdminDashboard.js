@@ -35,13 +35,17 @@ export function useAdminDashboard() {
     setLoading(true);
     
     // Subscribe to real-time updates (includes metadata changes for cache awareness)
+    let serverSynced = false;
     const unsubscribe = subscribeFilteredDocuments(
       currentUser.uid,
       appliedFilters.start,
       appliedFilters.end,
       (docs, fromServer) => {
+        // Skip cached snapshots until the first server-confirmed snapshot arrives.
+        // This prevents deleted documents from flashing on screen from stale cache.
+        if (!fromServer && !serverSynced) return;
+        serverSynced = true;
         setDocuments(docs);
-        // Only dismiss the loading spinner once we have server-confirmed data
         if (fromServer) setLoading(false);
       },
       (err) => {

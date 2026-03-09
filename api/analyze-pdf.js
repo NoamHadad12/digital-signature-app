@@ -58,7 +58,7 @@ const normalizeSuggestion = (entry) => {
 const parseGeminiJson = (rawText) => {
   // Robust cleaner for AI output
   const cleanText = String(rawText || '')
-    .replace(/\\\json|\\\/g, "")
+    .replace(/```json|```/g, "")
     .trim();
 
   console.log("[AI Debug] Raw Gemini Output:", cleanText);
@@ -87,7 +87,7 @@ const parseGeminiJson = (rawText) => {
 async function callGemini({ imageBase64, mimeType, pageNumber }) {
   const apiKey = (process.env.VITE_GEMINI_API_KEY || '').trim();
 
-  if (!apiKey || apiKey.startsWith('$')) {
+  if (!apiKey || apiKey.startsWith('${')) {
     throw new Error('VITE_GEMINI_API_KEY is not configured.');
   }
 
