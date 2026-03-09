@@ -1,24 +1,11 @@
 import { useState, useEffect } from 'react';
-import { subscribeFilteredDocuments, getFilteredDocuments, editDocumentName } from '../services/dbService';
+import { subscribeFilteredDocuments, getFilteredDocuments, editDocumentName, deleteDocument } from '../services/dbService';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
-
-import { storage, db } from '../firebase';
-import { ref, deleteObject } from 'firebase/storage';
-import { doc, deleteDoc as firestoreDeleteDoc } from 'firebase/firestore';
 
 export function useAdminDashboard() {
   const { currentUser, logout, userProfile } = useAuth();
   const { showToast, confirm } = useNotification();
-
-  // Polyfill wrapper for backward compatibility with requested syntax
-  const firebase = {
-    storage: () => ({
-      refFromURL: (url) => ({
-        delete: () => deleteObject(ref(storage, url))
-      })
-    })
-  };
 
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading]     = useState(false);
@@ -107,32 +94,8 @@ export function useAdminDashboard() {
 
     setDeletingIds(prev => new Set(prev).add(docObj.id));
     try {
-      const originalPdfUrl = docObj.originalPdfUrl || docObj.fileUrl;
-
-      // Step 1: Storage Cleanup. Identify and delete:
-      // - The original PDF file from Firebase Storage.
-      // - The signed PDF file (if it exists) from Firebase Storage.
-      if (originalPdfUrl) {
-        try {
-          await firebase.storage().refFromURL(originalPdfUrl).delete();
-        } catch (e) {
-          console.warn('Original storage file not found or already deleted', e);
-        }
-      }
-      
-      if (docObj.signedPdfUrl) {
-        try {
-          await firebase.storage().refFromURL(docObj.signedPdfUrl).delete();
-        } catch (e) {
-          console.warn('Signed storage file not found or already deleted', e);
-        }
-      }
-
-      // Step 2: Firestore Cleanup
-      // Only after the files are removed (or if they don't exist), call deleteDoc() to remove the document metadata from the documents collection.
-      const docRef = doc(db, 'documents', docObj.id);
-      await firestoreDeleteDoc(docRef);
-
+      await deleteDocument(docObj.id, docObj);
+      setDocuments((prev) => prev.filter((documentItem) => documentItem.id !== docObj.id));
       showToast('Document and associated files permanently deleted.');
     } catch (err) {
       console.error(err);
@@ -188,32 +151,7 @@ export function useAdminDashboard() {
 
       let deletedCount = 0;
       for (const docObj of oldDocs) {
-        const originalPdfUrl = docObj.originalPdfUrl || docObj.fileUrl;
-
-        // Step 1: Storage Cleanup. Identify and delete:
-        // - The original PDF file from Firebase Storage.
-        // - The signed PDF file (if it exists) from Firebase Storage.
-        if (originalPdfUrl) {
-          try {
-            await firebase.storage().refFromURL(originalPdfUrl).delete();
-          } catch (e) {
-            console.warn('Original storage file not found or already deleted', e);
-          }
-        }
-        
-        if (docObj.signedPdfUrl) {
-          try {
-            await firebase.storage().refFromURL(docObj.signedPdfUrl).delete();
-          } catch (e) {
-            console.warn('Signed storage file not found or already deleted', e);
-          }
-        }
-
-        // Step 2: Firestore Cleanup
-        // Only after the files are removed (or if they don't exist), call deleteDoc() to remove the document metadata from the documents collection.
-        const docRef = doc(db, 'documents', docObj.id);
-        await firestoreDeleteDoc(docRef);
-
+        await deleteDocument(docObj.id, docObj);
         deletedCount++;
       }
 

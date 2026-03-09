@@ -32,6 +32,7 @@ import {
   collection,
   addDoc,
   getDoc,
+  getDocFromServer,
   getDocs,
   query,
   where,
@@ -59,6 +60,22 @@ const applyDocumentDateFilters = (documents, startDate, endDate) => {
 
   filteredDocuments.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   return filteredDocuments;
+};
+
+const deleteStorageAsset = async (storageTarget, assetLabel) => {
+  if (!storageTarget) return false;
+
+  try {
+    await deleteObject(ref(storage, storageTarget));
+    return true;
+  } catch (error) {
+    if (error?.code === 'storage/object-not-found') {
+      console.warn(`${assetLabel} not found or already deleted`, error);
+      return false;
+    }
+
+    throw error;
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -230,41 +247,41 @@ export const updateDocumentStatus = async (documentId, status, extraFields = {})
 // Completely removes a document and its markers from Firestore, and the PDF
 // from Storage, and logs the deletion.
 // ---------------------------------------------------------------------------
-export const deleteDocument = async (documentId, documentData) => {
+export const deleteDocument = async (documentId, documentData = {}) => {
+  const documentRef = doc(db, 'documents', documentId);
+
   try {
-    // 1. Delete actual PDF file from Firebase Storage
     const originalStorageTarget =
+      documentData.fileRef ||
       documentData.originalPdfUrl ||
       documentData.fileUrl ||
-      documentData.fileRef ||
       `pdfs/${documentId}.pdf`;
-    const fileRef = ref(storage, originalStorageTarget);
-    try {
-      await deleteObject(fileRef);
-    } catch (e) {
-      console.warn('Storage file not found or already deleted', e);
+    const signedStorageTarget =
+      documentData.signedPdfUrl ||
+      ((documentData.status || '').toLowerCase() === 'signed'
+        ? `pdfs/signed_${documentId}.pdf`
+        : '');
+
+    await deleteStorageAsset(originalStorageTarget, 'Original PDF');
+
+    if (signedStorageTarget && signedStorageTarget !== originalStorageTarget) {
+      await deleteStorageAsset(signedStorageTarget, 'Signed PDF');
     }
 
-    // 1b. Attempt to delete signed PDF if it exists
-    const signedStorageTarget = documentData.signedPdfUrl || `pdfs/signed_${documentId}.pdf`;
-    const signedFileRef = ref(storage, signedStorageTarget);
-    try {
-      await deleteObject(signedFileRef);
-    } catch {
-      // It might not exist if it was never signed, ignore
-    }
-
-    // 2. Delete all associated markers in the sub-collection
-    const documentRef = doc(db, 'documents', documentId);
     const markersRef = collection(documentRef, 'markers');
     const markersSnap = await getDocs(markersRef);
     const deletePromises = markersSnap.docs.map((markerDoc) => deleteDoc(markerDoc.ref));
     await Promise.all(deletePromises);
     
-    // 3. Delete the document from Firestore
     await deleteDoc(documentRef);
+
+    const deletedDocumentSnap = await getDocFromServer(documentRef);
+    if (deletedDocumentSnap.exists()) {
+      throw new Error(`Firestore document ${documentId} still exists after deletion.`);
+    }
+
+    console.log('Firestore record deleted successfully', documentId);
     
-    // 4. Log Action
     await logAction('delete_doc', documentId, { 
       fileName: documentData.fileName,
       clientId: documentData.clientId 

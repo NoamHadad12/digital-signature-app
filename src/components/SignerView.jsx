@@ -51,7 +51,6 @@ const SignerView = () => {
   const [missingFile, setMissingFile] = useState(false);
   const [signedPdfUrl, setSignedPdfUrl] = useState('');
   const [originalPdfUrl, setOriginalPdfUrl] = useState('');
-  const [cleanupNotice, setCleanupNotice] = useState('');
   const [isSigned, setIsSigned] = useState(false);
   const [signMode, setSignMode] = useState('draw'); // 'draw' | 'upload'
   const [uploadedSignature, setUploadedSignature] = useState(null);
@@ -387,18 +386,14 @@ const SignerView = () => {
 
       let cleanupPromise = Promise.resolve();
       if (cleanupTargetUrl && cleanupTargetUrl !== result.downloadUrl) {
-        setCleanupNotice('ניקוי אוטומטי של קובץ המקור פעיל.');
         cleanupPromise = storageCompat
           .refFromURL(cleanupTargetUrl)
           .delete()
           .catch((cleanupError) => {
             console.warn('Original PDF cleanup failed after a successful signing flow:', cleanupError);
           });
-      } else {
-        setCleanupNotice('');
-        if (cleanupTargetUrl && cleanupTargetUrl === result.downloadUrl) {
-          console.warn('Skipped original PDF cleanup because the original URL matches the signed URL.');
-        }
+      } else if (cleanupTargetUrl && cleanupTargetUrl === result.downloadUrl) {
+        console.warn('Skipped original PDF cleanup because the original URL matches the signed URL.');
       }
 
       setSignedPdfUrl(result.downloadUrl);
@@ -436,8 +431,6 @@ const SignerView = () => {
     return (
       <div className="success-screen">
         <h1>✓ Document Signed and Sent!</h1>
-        <p>Thank you for completing the document.</p>
-        {cleanupNotice && <p dir="rtl">{cleanupNotice}</p>}
         <a 
           href={signedPdfUrl} 
           download 
