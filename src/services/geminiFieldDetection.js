@@ -96,30 +96,24 @@ const createCanvas = (width, height) => {
 const normalizeHebrew = (text) => {
   if (!text || typeof text !== 'string') return text;
 
-  // High confidence overrides for specific critical terms
+  // ONLY map known reversed field labels. Do NOT touch other words.
   const HEBREW_MAP = {
     'ךיראת': 'תאריך',
     'םש': 'שם',
-    'התימת': 'חתימה'
+    'התימת': 'חתימה',
+    'חתימת': 'חתימת', // ensure this is not reversed back
+    'מילגאי/ת': 'מילגאי/ת'
   };
 
   return text.split(/\s+/).map(word => {
-    // Strip punctuation to check the core word
     const cleanWord = word.replace(/[^\u0590-\u05FF]/g, '');
     const punctuation = word.replace(/[\u0590-\u05FF]/g, '');
 
-    // Return mapped word with its original punctuation if it exists
     if (HEBREW_MAP[cleanWord]) {
       return HEBREW_MAP[cleanWord] + punctuation;
     }
 
-    // Heuristic: If word contains Hebrew and is larger than 1 char, reverse it
-    const isHebrew = /[\u0590-\u05FF]/.test(cleanWord);
-    if (isHebrew && cleanWord.length > 1) {
-      const reversed = cleanWord.split('').reverse().join('');
-      return reversed + punctuation;
-    }
-
+    // Leave all other words exactly as they are extracted
     return word;
   }).join(' ');
 };

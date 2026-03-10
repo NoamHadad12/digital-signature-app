@@ -20,7 +20,11 @@ const responseSchema = {
   items: {
     type: SchemaType.OBJECT,
     properties: {
-      type: { type: SchemaType.STRING, enum: ["signature", "date", "text"] },
+      type: { 
+        type: SchemaType.STRING, 
+        description: "The type of field. Must be exactly one of these values. Fallback to 'text' if not strictly a signature or date.",
+        enum: ["signature", "date", "text"] 
+      },
       label: { type: SchemaType.STRING },
       x: { type: SchemaType.NUMBER },
       y: { type: SchemaType.NUMBER }
