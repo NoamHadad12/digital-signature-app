@@ -72,8 +72,18 @@ const SignerView = () => {
   // 'idle' | 'sending' | 'waiting' | 'verifying' | 'verified'
   const [twoFAState, setTwoFAState] = useState('idle');
   const [otpCode, setOtpCode] = useState('');
+  const [resendCountdown, setResendCountdown] = useState(0);
   const confirmationRef = useRef(null);
   const recaptchaVerifierRef = useRef(null);
+
+  useEffect(() => {
+    let timer;
+    if (resendCountdown > 0 && twoFAState === 'waiting') {
+      timer = setTimeout(() => setResendCountdown((prev) => prev - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [resendCountdown, twoFAState]);
+
   // -------------------------------------------------------------------------
 
   const handleClearSignature = () => {
@@ -261,8 +271,11 @@ const SignerView = () => {
       const formattedPhone = formatPhoneNumber(signerPhone);
       console.log(`[Auth Debug] Attempting SMS to: ${formattedPhone}`);
 
-      // Ensure cleanup before EVERY attempt
-      const verifier = renderRecaptcha();
+      // Ensure cleanup before EVERY attempt ONLY if no verifier exists
+      let verifier = window.recaptchaVerifier;
+      if (!verifier) {
+        verifier = renderRecaptcha();
+      }
 
       const confirmation = await signInWithPhoneNumber(
         auth,
@@ -270,11 +283,11 @@ const SignerView = () => {
         verifier
       );
       
-      // Log confirmationResult to console to check for silent failures
-      console.log('[Auth Debug] confirmationResult:', confirmation);
+      console.log('[Auth Success] SMS request accepted by Firebase. confirmationResult:', confirmation);
       
       confirmationRef.current = confirmation;
       setTwoFAState('waiting');
+      setResendCountdown(30);
       showToast('קוד אימות נשלח לטלפון שלך', 'success');
     } catch (err) {
       console.error('[Auth Debug] 2FA send error:', err);
@@ -290,6 +303,7 @@ const SignerView = () => {
       
       nuclearRecaptchaCleanup();
       setTwoFAState('idle');
+      setResendCountdown(0);
     }
   };
 
@@ -521,17 +535,22 @@ const SignerView = () => {
               >
                 {twoFAState === 'verifying' ? 'מאמת...' : 'אמת וכנס'}
               </button>
-              <button
-                className="btn"
-                style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: '0.9rem' }}
-                onClick={() => {
-                  setOtpCode('');
-                  nuclearRecaptchaCleanup();
-                  setTwoFAState('idle');
-                }}
-              >
-                לא קיבלת? שלח שוב
-              </button>
+              {resendCountdown > 0 ? (
+                <p style={{ color: '#666', fontSize: '0.9rem', marginTop: 16 }}>
+                  ניתן לשלוח שוב בעוד {resendCountdown} שניות
+                </p>
+              ) : (
+                <button
+                  className="btn"
+                  style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: '0.9rem', marginTop: 16 }}
+                  onClick={() => {
+                    setOtpCode('');
+                    handleSendCode();
+                  }}
+                >
+                  לא קיבלת? שלח שוב
+                </button>
+              )}
             </>
           )}
         </div>
