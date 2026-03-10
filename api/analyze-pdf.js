@@ -1,6 +1,6 @@
 // api/analyze-pdf.js
 // Vercel serverless function for Gemini-powered field detection.
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 
 export const config = {
   api: {
@@ -14,7 +14,27 @@ export const maxDuration = 60;
 
 const MODEL_NAME = 'gemini-2.5-flash';
 
-const ANALYSIS_PROMPT = "You are an expert document parser. Your goal is to find the EXACT center coordinates of signature lines and date fields. Use a coordinate system from 0 to 1000. [0,0] is Top-Left, [1000,1000] is Bottom-Right. DO NOT guess or return round numbers like 500, 500. Analyze the visual lines carefully. Return the precise [x, y] of where a human would sign. Look specifically for horizontal lines or empty spaces next to labels like 'Signature', 'Date', or 'Name'. If you encounter reversed Hebrew words in the PDF text metadata (e.g., 'ךיראת'), treat them as their logical equivalent ('תאריך') and assign the correct field type (e.g., Date). Do the same for 'םש' (Name) and 'התימת' (Signature). Return ONLY a raw JSON array of objects — no markdown, no backticks, no text before or after the array. Each object must have exactly these keys: { \"type\": \"signature\" | \"date\", \"label\": string, \"x\": number, \"y\": number }. The array must be complete and valid JSON with every object properly closed."
+// 1. Define the exact JSON structure we demand from the AI
+const responseSchema = {
+  type: SchemaType.ARRAY,
+  items: {
+    type: SchemaType.OBJECT,
+    properties: {
+      type: { type: SchemaType.STRING, enum: ["signature", "date", "text"] },
+      label: { type: SchemaType.STRING },
+      x: { type: SchemaType.NUMBER },
+      y: { type: SchemaType.NUMBER }
+    },
+    required: ["type", "label", "x", "y"]
+  }
+};
+
+// 2. System Instruction isolated from the user prompt
+const SYSTEM_INSTRUCTION = `You are an expert document parser. Find the EXACT center coordinates of signature lines and date fields.
+Coordinate system: 0 to 1000. [0,0] is Top-Left, [1000,1000] is Bottom-Right. DO NOT guess round numbers like 500,500. Analyze the visual lines carefully. Return the precise [x, y] of where a human would sign. Look specifically for horizontal lines or empty spaces next to labels like 'Signature', 'Date', or 'Name'.
+IMPORTANT: You will receive PDF text metadata. Hebrew words might be physically reversed (Visual Hebrew) due to PDF extraction.
+Always reverse Hebrew strings logically before identifying them. For example, 'ךיראת' means 'תאריך' (Date), 'םש' means 'שם' (Name), and 'התימת' means 'חתימה' (Signature).
+Assign the correct field type based on the logical word. Return the logical, readable Hebrew in the label.`;
 
 // Coordinate scaling: Gemini returns values on a 0-1000 scale.
 // We must divide by 10 to convert them to 0-100 percent values used by the UI.
@@ -58,43 +78,6 @@ const normalizeSuggestion = (entry) => {
   };
 };
 
-const parseGeminiJson = (rawText) => {
-  const raw = String(rawText || '');
-
-  // Use a regex to extract the outermost JSON array, handling any surrounding
-  // text, markdown fences (```json ... ```), or stray characters Gemini may add.
-  const match = raw.match(/\[[\s\S]*\]/);
-  const cleanText = match ? match[0].trim() : '';
-
-  console.log('[AI Debug] Cleaned Gemini Output:', cleanText);
-
-  if (!cleanText || cleanText === '[]') {
-    console.warn('[analyze-pdf] Gemini returned no detectable JSON array. Full raw response:', raw);
-    return [];
-  }
-
-  let parsed;
-  try {
-    parsed = JSON.parse(cleanText);
-  } catch (error) {
-    // Log the first and last 50 chars of the raw response to pinpoint where truncation occurs.
-    const head = raw.slice(0, 50);
-    const tail = raw.slice(-50);
-    console.error('[analyze-pdf] JSON.parse failed. Parse error:', error.message);
-    console.error('[analyze-pdf] Raw response head (first 50):', head);
-    console.error('[analyze-pdf] Raw response tail (last 50):', tail);
-    console.error('[analyze-pdf] Full cleaned/extracted string:', cleanText);
-    return [];
-  }
-
-  if (!Array.isArray(parsed)) {
-    console.warn('[analyze-pdf] Gemini response was not an array:', parsed);
-    return [];
-  }
-
-  return parsed.map(normalizeSuggestion).filter(Boolean);
-};
-
 async function callGemini({ imageBase64, mimeType, pageNumber, pageText }) {
   const apiKey = (process.env.VITE_GEMINI_API_KEY || '').trim();
 
@@ -108,23 +91,27 @@ async function callGemini({ imageBase64, mimeType, pageNumber, pageText }) {
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
+  
+  // 3. Initialize model with Schema and System Instructions
   const model = genAI.getGenerativeModel({
     model: MODEL_NAME,
+    systemInstruction: SYSTEM_INSTRUCTION,
     generationConfig: {
       temperature: 0,
       // 4096 tokens prevents truncated JSON on long documents with many fields.
       maxOutputTokens: 4096,
       responseMimeType: 'application/json',
+      responseSchema: responseSchema, // Magic happens here! No more regex parsing needed.
     },
   }, { apiVersion: 'v1beta' });
 
   try {
     const promptParts = [
-      { text: "Page " + pageNumber + ". " + ANALYSIS_PROMPT }
+      { text: `Analyze Page ${pageNumber}.` }
     ];
 
     if (pageText && typeof pageText === 'string') {
-      promptParts.push({ text: "Extracted PDF text metadata for context: " + pageText });
+      promptParts.push({ text: `Extracted PDF text metadata: ${pageText}` });
     }
 
     promptParts.push({
@@ -135,10 +122,24 @@ async function callGemini({ imageBase64, mimeType, pageNumber, pageText }) {
     });
 
     const result = await model.generateContent(promptParts);
-
     const rawText = result.response.text();
-    console.log('[AI Raw Response]', rawText);
-    return parseGeminiJson(rawText);
+    console.log('[AI Raw JSON]', rawText);
+    
+    // Because we used responseSchema, we can safely JSON.parse without weird regex cleanups
+    let parsed;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch (error) {
+      console.error('[analyze-pdf] JSON.parse failed on structured output. Parse error:', error.message);
+      return [];
+    }
+
+    if (!Array.isArray(parsed)) {
+      console.warn('[analyze-pdf] Gemini response was not an array:', parsed);
+      return [];
+    }
+
+    return parsed.map(normalizeSuggestion).filter(Boolean);
   } catch (error) {
     console.warn("[analyze-pdf] Gemini API error: " + error.message);
     if (error.status === 404 || error.message.includes('404') || error.message.includes('not found') || error.message.includes('ModelNotSupported')) {

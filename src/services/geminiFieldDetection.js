@@ -91,15 +91,12 @@ const createCanvas = (width, height) => {
   return { canvas, context };
 };
 
-// Utility to detect if a string contains Hebrew characters
-const hasHebrewChars = (str) => /[\u0590-\u05FF]/.test(str);
-
-// Normalize common reversed Hebrew words found in PDF extraction
-// Checks string for typical reversed values and normalizes them for the AI Context.
+// Normalizes Hebrew text from PDF extraction.
+// Handles reversed "Visual Hebrew" and preserves punctuation.
 const normalizeHebrew = (text) => {
   if (!text || typeof text !== 'string') return text;
-  
-  // Specific logical equivalents explicitly requested
+
+  // High confidence overrides for specific critical terms
   const HEBREW_MAP = {
     'ךיראת': 'תאריך',
     'םש': 'שם',
@@ -107,14 +104,22 @@ const normalizeHebrew = (text) => {
   };
 
   return text.split(/\s+/).map(word => {
-    // If exact match in map, use the normalized version
-    if (HEBREW_MAP[word]) {
-      return HEBREW_MAP[word];
+    // Strip punctuation to check the core word
+    const cleanWord = word.replace(/[^\u0590-\u05FF]/g, '');
+    const punctuation = word.replace(/[\u0590-\u05FF]/g, '');
+
+    // Return mapped word with its original punctuation if it exists
+    if (HEBREW_MAP[cleanWord]) {
+      return HEBREW_MAP[cleanWord] + punctuation;
     }
-    
-    // If the word has Hebrew characters and isn't caught by the map,
-    // we return it as is, but we could optionally reverse it here.
-    // We strictly follow the explicit Reversal Check mapping above for safety.
+
+    // Heuristic: If word contains Hebrew and is larger than 1 char, reverse it
+    const isHebrew = /[\u0590-\u05FF]/.test(cleanWord);
+    if (isHebrew && cleanWord.length > 1) {
+      const reversed = cleanWord.split('').reverse().join('');
+      return reversed + punctuation;
+    }
+
     return word;
   }).join(' ');
 };
