@@ -14,7 +14,7 @@ export const maxDuration = 60;
 
 const MODEL_NAME = 'gemini-2.5-flash';
 
-const ANALYSIS_PROMPT = "You are an expert document parser. Your goal is to find the EXACT center coordinates of signature lines and date fields. Use a coordinate system from 0 to 1000. [0,0] is Top-Left, [1000,1000] is Bottom-Right. DO NOT guess or return round numbers like 500, 500. Analyze the visual lines carefully. Return the precise [x, y] of where a human would sign. Look specifically for horizontal lines or empty spaces next to labels like 'Signature', 'Date', or 'Name'. Return ONLY a raw JSON array of objects — no markdown, no backticks, no text before or after the array. Each object must have exactly these keys: { \"type\": \"signature\" | \"date\", \"label\": string, \"x\": number, \"y\": number }. The array must be complete and valid JSON with every object properly closed."
+const ANALYSIS_PROMPT = "You are an expert document parser. Your goal is to find the EXACT center coordinates of signature lines and date fields. Use a coordinate system from 0 to 1000. [0,0] is Top-Left, [1000,1000] is Bottom-Right. DO NOT guess or return round numbers like 500, 500. Analyze the visual lines carefully. Return the precise [x, y] of where a human would sign. Look specifically for horizontal lines or empty spaces next to labels like 'Signature', 'Date', or 'Name'. If you encounter reversed Hebrew words in the PDF text metadata (e.g., 'ךיראת'), treat them as their logical equivalent ('תאריך') and assign the correct field type (e.g., Date). Do the same for 'םש' (Name) and 'התימת' (Signature). Return ONLY a raw JSON array of objects — no markdown, no backticks, no text before or after the array. Each object must have exactly these keys: { \"type\": \"signature\" | \"date\", \"label\": string, \"x\": number, \"y\": number }. The array must be complete and valid JSON with every object properly closed."
 
 // Coordinate scaling: Gemini returns values on a 0-1000 scale.
 // We must divide by 10 to convert them to 0-100 percent values used by the UI.
@@ -95,7 +95,7 @@ const parseGeminiJson = (rawText) => {
   return parsed.map(normalizeSuggestion).filter(Boolean);
 };
 
-async function callGemini({ imageBase64, mimeType, pageNumber }) {
+async function callGemini({ imageBase64, mimeType, pageNumber, pageText }) {
   const apiKey = (process.env.VITE_GEMINI_API_KEY || '').trim();
 
   if (!apiKey || apiKey.startsWith('${')) {
@@ -119,15 +119,22 @@ async function callGemini({ imageBase64, mimeType, pageNumber }) {
   }, { apiVersion: 'v1beta' });
 
   try {
-    const result = await model.generateContent([
-      { text: "Page " + pageNumber + ". " + ANALYSIS_PROMPT },
-      {
-        inlineData: {
-          mimeType: mimeType || 'image/jpeg',
-          data: cleanBase64,
-        },
+    const promptParts = [
+      { text: "Page " + pageNumber + ". " + ANALYSIS_PROMPT }
+    ];
+
+    if (pageText && typeof pageText === 'string') {
+      promptParts.push({ text: "Extracted PDF text metadata for context: " + pageText });
+    }
+
+    promptParts.push({
+      inlineData: {
+        mimeType: mimeType || 'image/jpeg',
+        data: cleanBase64,
       },
-    ]);
+    });
+
+    const result = await model.generateContent(promptParts);
 
     const rawText = result.response.text();
     console.log('[AI Raw Response]', rawText);
@@ -146,14 +153,19 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { imageBase64, mimeType, pageNumber } = req.body || {};
+  const { imageBase64, mimeType, pageNumber, pageText } = req.body || {};
 
   if (!imageBase64 || typeof imageBase64 !== 'string') {
     return res.status(400).json({ error: 'imageBase64 string is required in the request body.' });
   }
 
   try {
-    const suggestions = await callGemini({ imageBase64, mimeType, pageNumber: Number(pageNumber) || 1 });
+    const suggestions = await callGemini({ 
+      imageBase64, 
+      mimeType, 
+      pageNumber: Number(pageNumber) || 1, 
+      pageText 
+    });
     return res.status(200).json({ suggestions });
   } catch (error) {
     console.error('[analyze-pdf] Error:', error.message);

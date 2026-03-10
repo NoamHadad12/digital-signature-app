@@ -91,6 +91,34 @@ const createCanvas = (width, height) => {
   return { canvas, context };
 };
 
+// Utility to detect if a string contains Hebrew characters
+const hasHebrewChars = (str) => /[\u0590-\u05FF]/.test(str);
+
+// Normalize common reversed Hebrew words found in PDF extraction
+// Checks string for typical reversed values and normalizes them for the AI Context.
+const normalizeHebrew = (text) => {
+  if (!text || typeof text !== 'string') return text;
+  
+  // Specific logical equivalents explicitly requested
+  const HEBREW_MAP = {
+    'ךיראת': 'תאריך',
+    'םש': 'שם',
+    'התימת': 'חתימה'
+  };
+
+  return text.split(/\s+/).map(word => {
+    // If exact match in map, use the normalized version
+    if (HEBREW_MAP[word]) {
+      return HEBREW_MAP[word];
+    }
+    
+    // If the word has Hebrew characters and isn't caught by the map,
+    // we return it as is, but we could optionally reverse it here.
+    // We strictly follow the explicit Reversal Check mapping above for safety.
+    return word;
+  }).join(' ');
+};
+
 const renderPdfPagesToImages = async (file) => {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const loadingTask = pdfjs.getDocument({ data: bytes, disableWorker: true });
@@ -108,10 +136,16 @@ const renderPdfPagesToImages = async (file) => {
 
       await page.render({ canvasContext: context, viewport }).promise;
 
+      // Extract text content from the page to provide as context
+      const textContent = await page.getTextContent();
+      const rawPageText = textContent.items.map(item => item.str).join(' ');
+      const normalizedText = normalizeHebrew(rawPageText);
+
       pageImages.push({
         pageNumber,
         mimeType: OUTPUT_MIME_TYPE,
         imageBase64: canvas.toDataURL(OUTPUT_MIME_TYPE, OUTPUT_QUALITY).split(',')[1],
+        pageText: normalizedText,
       });
 
       page.cleanup();
@@ -127,13 +161,13 @@ const renderPdfPagesToImages = async (file) => {
   return pageImages;
 };
 
-const requestPageSuggestions = async ({ imageBase64, mimeType, pageNumber }) => {
+const requestPageSuggestions = async ({ imageBase64, mimeType, pageNumber, pageText }) => {
   const response = await fetch(ANALYZE_ENDPOINT, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json; charset=utf-8',
     },
-    body: JSON.stringify({ imageBase64, mimeType, pageNumber }),
+    body: JSON.stringify({ imageBase64, mimeType, pageNumber, pageText }),
   });
 
   let payload = null;
