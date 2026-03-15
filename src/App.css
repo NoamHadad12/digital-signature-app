@@ -356,6 +356,72 @@ body {
   display: block;
 }
 
+.sig-pen-size-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.sig-pen-size-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+}
+
+.sig-pen-size-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sig-pen-size-btn {
+  border: 1px solid #d1d5db;
+  background: #f8fafc;
+  color: #4b5563;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.sig-pen-size-btn:hover {
+  border-color: #f08f8f;
+  color: #b42318;
+}
+
+.sig-pen-size-btn.active {
+  border-color: #e53e3e;
+  background: #fff1f2;
+  color: #b42318;
+  box-shadow: 0 0 0 2px #fee2e2;
+}
+
+.sig-pen-size-preview {
+  width: 24px;
+  height: 8px;
+  position: relative;
+}
+
+.sig-pen-size-preview::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--preview-thickness, 2px);
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: currentColor;
+}
+
 /* Placeholder text shown before the user draws */
 .form-sig-placeholder {
   position: absolute;
@@ -496,12 +562,22 @@ body {
   color: var(--success-color);
   font-size: 2.2rem;
   font-weight: 700;
+  margin: 0;
+  line-height: 1.25;
 }
 
 .success-screen p {
   font-size: 1.1rem;
   color: var(--text-light-color);
   margin-bottom: 30px;
+}
+
+.success-screen a.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 20px;
+  text-decoration: none;
 }
 
 /* Extra bottom padding so page content is never hidden behind the sticky footer.
@@ -672,6 +748,20 @@ body {
 
   .form-sig-wrap {
     height: 68px;
+  }
+
+  .sig-pen-size-row {
+    margin-bottom: 6px;
+  }
+
+  .sig-pen-size-btn {
+    padding: 3px 7px;
+    font-size: 0.66rem;
+    gap: 5px;
+  }
+
+  .sig-pen-size-preview {
+    width: 20px;
   }
 }
 

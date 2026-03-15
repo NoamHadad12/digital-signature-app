@@ -32,6 +32,12 @@ const getInputKey = (marker, idx) => {
   return `__field_${idx}__`;
 };
 
+const PEN_SIZE_OPTIONS = [
+  { key: 'fine', label: 'Fine', lineWidth: 1.5, minWidth: 0.7, maxWidth: 1.6 },
+  { key: 'medium', label: 'Medium', lineWidth: 2.4, minWidth: 1.3, maxWidth: 2.6 },
+  { key: 'bold', label: 'Bold', lineWidth: 3.8, minWidth: 2.2, maxWidth: 4.2 },
+];
+
 const storageCompat = {
   refFromURL: (url) => ({
     delete: () => deleteObject(ref(storage, url)),
@@ -54,6 +60,10 @@ const SignerView = () => {
   const [isSigned, setIsSigned] = useState(false);
   const [signMode, setSignMode] = useState('draw'); // 'draw' | 'upload'
   const [uploadedSignature, setUploadedSignature] = useState(null);
+  const [selectedPenSize, setSelectedPenSize] = useState('medium');
+
+  const selectedPenConfig =
+    PEN_SIZE_OPTIONS.find((option) => option.key === selectedPenSize) || PEN_SIZE_OPTIONS[1];
 
   // fieldValues stores typed text, keyed by getInputKey(marker, idx).
   // Date fields share '__date__'; every other text field has a unique index key.
@@ -65,6 +75,22 @@ const SignerView = () => {
 
   const windowWidth = useWindowWidth();
   const sigCanvas = useRef(null);
+
+  useEffect(() => {
+    const signaturePad = sigCanvas.current?.getSignaturePad?.();
+    if (signaturePad) {
+      signaturePad.minWidth = selectedPenConfig.minWidth;
+      signaturePad.maxWidth = selectedPenConfig.maxWidth;
+    }
+
+    const canvas = sigCanvas.current?.getCanvas?.();
+    const ctx = canvas?.getContext?.('2d');
+    if (ctx) {
+      ctx.lineWidth = selectedPenConfig.lineWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+    }
+  }, [selectedPenConfig]);
 
   // --- 2FA state -----------------------------------------------------------
   const [signerPhone, setSignerPhone] = useState('');
@@ -662,15 +688,42 @@ const SignerView = () => {
                   </div>
                   <div className="form-card-body" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                     {signMode === 'draw' ? (
-                      <div className="form-sig-wrap" style={{ flexGrow: 1, height: '120px', minHeight: '120px', borderColor: isSigned ? '#e53e3e55' : '#e0e0e0' }}>
-                        <SignatureCanvas
-                          ref={sigCanvas}
-                          penColor="#1a1a1a"
-                          onBegin={() => setIsSigned(true)}
-                          canvasProps={{ className: 'sigCanvas', style: { width: '100%', height: '100%' } }}
-                        />
-                        {!isSigned && <div className="form-sig-placeholder">Sign here</div>}
-                      </div>
+                      <>
+                        <div className="sig-pen-size-row" role="group" aria-label="Signature pen thickness">
+                          <span className="sig-pen-size-label">Pen thickness</span>
+                          <div className="sig-pen-size-buttons">
+                            {PEN_SIZE_OPTIONS.map((option) => {
+                              const isActive = selectedPenSize === option.key;
+                              return (
+                                <button
+                                  key={option.key}
+                                  type="button"
+                                  className={`sig-pen-size-btn${isActive ? ' active' : ''}`}
+                                  onClick={() => setSelectedPenSize(option.key)}
+                                  aria-pressed={isActive}
+                                >
+                                  <span>{option.label}</span>
+                                  <span
+                                    className="sig-pen-size-preview"
+                                    style={{ '--preview-thickness': `${option.lineWidth}px` }}
+                                  ></span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div className="form-sig-wrap" style={{ flexGrow: 1, height: '120px', minHeight: '120px', borderColor: isSigned ? '#e53e3e55' : '#e0e0e0' }}>
+                          <SignatureCanvas
+                            ref={sigCanvas}
+                            penColor="#1a1a1a"
+                            minWidth={selectedPenConfig.minWidth}
+                            maxWidth={selectedPenConfig.maxWidth}
+                            onBegin={() => setIsSigned(true)}
+                            canvasProps={{ className: 'sigCanvas', style: { width: '100%', height: '100%' } }}
+                          />
+                          {!isSigned && <div className="form-sig-placeholder">Sign here</div>}
+                        </div>
+                      </>
                     ) : (
                       <div className="form-sig-wrap" style={{ display: 'flex', flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: '10px', height: '120px', minHeight: '120px', borderColor: isSigned ? '#e53e3e55' : '#e0e0e0' }}>
                         {uploadedSignature ? (
