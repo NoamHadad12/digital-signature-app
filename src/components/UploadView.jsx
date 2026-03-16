@@ -90,7 +90,16 @@ const UploadView = () => {
         </div>
       </div>
 
-      <h1>SignFlow</h1>
+      <img
+        src="/logo.png"
+        alt="SignFlow logo"
+        style={{
+          width: 'min(450px, 85vw)',
+          height: 'auto',
+          display: 'block',
+          margin: '10px auto 30px auto',
+        }}
+      />
       <p className="subtitle">Drop your document here</p>
       
       <div

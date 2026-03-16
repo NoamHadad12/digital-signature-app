@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { doc, setDoc } from 'firebase/firestore';
-import { Shield } from 'lucide-react';
 
 // Firebase error code -> Hebrew user-friendly message mapping
 const AUTH_ERRORS = {
@@ -73,15 +72,14 @@ const SignUp = () => {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-slate-100">
 
-        {/* Brand header with Lucide icon */}
+        {/* Brand header with shared logo asset */}
         <div className="text-center mb-8">
-          <div className="w-12 h-12 flex items-center justify-center bg-blue-100 rounded-2xl mx-auto mb-4">
-            <div className="w-6 h-6 text-blue-600">
-              <Shield className="w-full h-full" />
-            </div>
-          </div>
-          <h1 className="text-blue-600 font-bold text-3xl text-center mb-6">SignFlow</h1>
-          <p className="text-gray-500 mt-1 text-sm">Create your account</p>
+          <img
+            src="/logo.png"
+            alt="SignFlow logo"
+            className="w-48 sm:w-56 h-auto mx-auto object-contain"
+          />
+          <p className="text-gray-500 mt-4 text-sm font-medium">Create your account</p>
         </div>
 
         {/* Error banner - RTL for Hebrew messages */}
