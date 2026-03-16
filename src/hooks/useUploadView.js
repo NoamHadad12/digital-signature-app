@@ -371,7 +371,7 @@ export function useUploadView() {
   };
 
   const shareOnWhatsApp = () => {
-    const message = `You've been sent a document to sign: ${generatedLink}`;
+    const message = `היי! נשלח אליך מסמך חשוב לחתימה דרך מערכת SignFlow המאובטחת. אנא לחץ על הקישור למטה כדי לצפות ולחתום עליו בצורה קלה ומהירה. ${generatedLink}`;
     const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
   };
