@@ -4,7 +4,9 @@ const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg']);
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
 const A4_WIDTH_PT = 595.28;
 const A4_HEIGHT_PT = 841.89;
-const TARGET_DPI = 220;
+const TARGET_DPI = 300;
+const JPEG_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg']);
+const JPEG_QUALITY = 1.0;
 
 const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
@@ -45,9 +47,23 @@ export const convertImageToPdf = async (imageFile) => {
   const pageWidthPt = orientation === 'portrait' ? A4_WIDTH_PT : A4_HEIGHT_PT;
   const pageHeightPt = orientation === 'portrait' ? A4_HEIGHT_PT : A4_WIDTH_PT;
 
-  // Render to a high-resolution offscreen canvas before embedding into the PDF.
-  const canvasWidthPx = Math.round((pageWidthPt / 72) * TARGET_DPI);
-  const canvasHeightPx = Math.round((pageHeightPt / 72) * TARGET_DPI);
+  // Keep the effective output DPI high and never upscale low-resolution images.
+  const sourceWidthAtTargetDpiPt = (image.width / TARGET_DPI) * 72;
+  const sourceHeightAtTargetDpiPt = (image.height / TARGET_DPI) * 72;
+  const pageFitScale = Math.min(
+    pageWidthPt / sourceWidthAtTargetDpiPt,
+    pageHeightPt / sourceHeightAtTargetDpiPt,
+    1,
+  );
+
+  const drawWidthPt = sourceWidthAtTargetDpiPt * pageFitScale;
+  const drawHeightPt = sourceHeightAtTargetDpiPt * pageFitScale;
+  const drawXPt = (pageWidthPt - drawWidthPt) / 2;
+  const drawYPt = (pageHeightPt - drawHeightPt) / 2;
+
+  // Render at the final high-DPI placement size before embedding into the PDF.
+  const canvasWidthPx = Math.max(1, Math.round((drawWidthPt / 72) * TARGET_DPI));
+  const canvasHeightPx = Math.max(1, Math.round((drawHeightPt / 72) * TARGET_DPI));
   const canvas = document.createElement('canvas');
   canvas.width = canvasWidthPx;
   canvas.height = canvasHeightPx;
@@ -60,30 +76,40 @@ export const convertImageToPdf = async (imageFile) => {
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, canvasWidthPx, canvasHeightPx);
 
-  const scale = Math.min(canvasWidthPx / image.width, canvasHeightPx / image.height);
-  const drawWidth = Math.round(image.width * scale);
-  const drawHeight = Math.round(image.height * scale);
-  const drawX = Math.round((canvasWidthPx - drawWidth) / 2);
-  const drawY = Math.round((canvasHeightPx - drawHeight) / 2);
+  const scale = Math.min(canvasWidthPx / image.width, canvasHeightPx / image.height, 1);
+  const drawWidthPx = Math.max(1, Math.round(image.width * scale));
+  const drawHeightPx = Math.max(1, Math.round(image.height * scale));
+  const drawXPx = Math.round((canvasWidthPx - drawWidthPx) / 2);
+  const drawYPx = Math.round((canvasHeightPx - drawHeightPx) / 2);
 
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
-  context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+  context.drawImage(image, drawXPx, drawYPx, drawWidthPx, drawHeightPx);
+
+  const isJpegInput = JPEG_IMAGE_TYPES.has(imageFile.type);
+  const embedMimeType = isJpegInput ? 'image/jpeg' : 'image/png';
+  const embedFormat = isJpegInput ? 'JPEG' : 'PNG';
+  const imageDataForPdf = isJpegInput
+    ? canvas.toDataURL(embedMimeType, JPEG_QUALITY)
+    : canvas.toDataURL(embedMimeType);
 
   const pdfDocument = new jsPDF({
     orientation,
     unit: 'pt',
     format: 'a4',
-    compress: true,
+    compress: false,
+    precision: 16,
   });
 
   pdfDocument.addImage(
-    canvas.toDataURL('image/png'),
-    'PNG',
-    0,
-    0,
-    pageWidthPt,
-    pageHeightPt,
+    imageDataForPdf,
+    embedFormat,
+    drawXPt,
+    drawYPt,
+    drawWidthPt,
+    drawHeightPt,
+    undefined,
+    'NONE',
   );
 
   const pdfBlob = pdfDocument.output('blob');
