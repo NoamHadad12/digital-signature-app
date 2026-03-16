@@ -63,6 +63,19 @@ body {
   gap: 20px;
 }
 
+.drop-zone-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.drop-zone-support {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-light-color);
+}
+
 .drop-zone:hover {
   background-color: #eef4ff;
 }

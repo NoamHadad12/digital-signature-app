@@ -42,6 +42,8 @@ const UploadView = () => {
     pendingLabel,
     setPendingLabel,
     handleFileChange,
+    handleDropZoneDragOver,
+    handleFileDrop,
     handleDocumentLoadSuccess,
     handleMouseDown,
     handleMouseMove,
@@ -89,12 +91,18 @@ const UploadView = () => {
       </div>
 
       <h1>SignFlow</h1>
-      <p className="subtitle">Upload a PDF document to generate a shareable signing link.</p>
+      <p className="subtitle">Drop your document here</p>
       
-      <div className="drop-zone">
+      <div
+        className="drop-zone"
+        onDragOver={handleDropZoneDragOver}
+        onDrop={handleFileDrop}
+      >
+        <p className="drop-zone-title">Drop your document here</p>
+        <p className="drop-zone-support">Supports PDF, JPG, and PNG files</p>
         <input 
           type="file" 
-          accept="application/pdf" 
+          accept="application/pdf, image/png, image/jpeg" 
           onChange={handleFileChange} 
           className="file-input"
         />

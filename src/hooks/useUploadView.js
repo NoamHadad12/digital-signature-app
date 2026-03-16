@@ -8,6 +8,11 @@ import { doc, setDoc } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import { useWindowWidth } from '../utils/pdfHelpers';
 import { detectFieldsWithGemini } from '../services/geminiFieldDetection';
+import { convertImageToPdf } from '../utils/imageToPdf';
+
+const ACCEPTED_UPLOAD_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/jpg']);
+const IMAGE_UPLOAD_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg']);
+const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
 
 export const FIELD_TYPES = [
   { key: 'signature',  label: 'Signature',     type: 'signature',  color: '#e53e3e' },
@@ -54,24 +59,80 @@ export function useUploadView() {
   const [pendingBox, setPendingBox] = useState(null);
   const [pendingLabel, setPendingLabel] = useState('');
 
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
-
-    if (selectedFile && selectedFile.size > 10 * 1024 * 1024) {
-      showToast('File is too large! Maximum allowed size is 10MB.', 'error');
-      e.target.value = '';
-      return;
-    }
-
+  const resetUploadSelection = (selectedFile) => {
     setFile(selectedFile);
     setGeneratedLink('');
     setIsCopied(false);
     setFields([]);
+    setFileUrl(selectedFile ? URL.createObjectURL(selectedFile) : null);
+  };
 
-    if (selectedFile) {
-      setFileUrl(URL.createObjectURL(selectedFile));
-    } else {
-      setFileUrl(null);
+  const prepareFileForPipeline = async (selectedFile) => {
+    if (!selectedFile) {
+      return null;
+    }
+
+    if (!ACCEPTED_UPLOAD_TYPES.has(selectedFile.type)) {
+      showToast('Unsupported file type. Please upload a PDF, JPG, or PNG file.', 'error');
+      return null;
+    }
+
+    if (selectedFile.size > MAX_UPLOAD_SIZE_BYTES) {
+      showToast('File is too large! Maximum allowed size is 10MB.', 'error');
+      return null;
+    }
+
+    // Adapter pattern: normalize image uploads into a PDF file before entering the existing flow.
+    const normalizedFile = IMAGE_UPLOAD_TYPES.has(selectedFile.type)
+      ? await convertImageToPdf(selectedFile)
+      : selectedFile;
+
+    if (normalizedFile.size > MAX_UPLOAD_SIZE_BYTES) {
+      showToast('Converted PDF is too large! Maximum allowed size is 10MB.', 'error');
+      return null;
+    }
+
+    return normalizedFile;
+  };
+
+  const handleFileChange = async (e) => {
+    const input = e.target;
+    const selectedFile = input.files?.[0] || null;
+
+    try {
+      const pipelineReadyFile = await prepareFileForPipeline(selectedFile);
+      if (!selectedFile || !pipelineReadyFile) {
+        if (!pipelineReadyFile) input.value = '';
+        if (!selectedFile) resetUploadSelection(null);
+        return;
+      }
+
+      resetUploadSelection(pipelineReadyFile);
+    } catch (error) {
+      console.error('Image to PDF conversion failed:', error);
+      showToast('Failed to convert image to PDF. Please try another file.', 'error');
+      input.value = '';
+    }
+  };
+
+  const handleDropZoneDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleFileDrop = async (e) => {
+    e.preventDefault();
+    const selectedFile = e.dataTransfer?.files?.[0] || null;
+
+    try {
+      const pipelineReadyFile = await prepareFileForPipeline(selectedFile);
+      if (!pipelineReadyFile) {
+        return;
+      }
+
+      resetUploadSelection(pipelineReadyFile);
+    } catch (error) {
+      console.error('Image to PDF conversion failed:', error);
+      showToast('Failed to convert image to PDF. Please try another file.', 'error');
     }
   };
 
@@ -250,7 +311,7 @@ export function useUploadView() {
 
   const handleUpload = async () => {
     if (!file) {
-      showToast('Please select a PDF file first.', 'error');
+      showToast('Please select a document file first.', 'error');
       return;
     }
 
@@ -348,6 +409,8 @@ export function useUploadView() {
     pendingLabel,
     setPendingLabel,
     handleFileChange,
+    handleDropZoneDragOver,
+    handleFileDrop,
     handleDocumentLoadSuccess,
     handleMouseDown,
     handleMouseMove,
