@@ -54,6 +54,7 @@ const SignerView = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [isAlreadySigned, setIsAlreadySigned] = useState(false);
+  const [isExpired, setIsExpired] = useState(false);
   const [missingFile, setMissingFile] = useState(false);
   const [signedPdfUrl, setSignedPdfUrl] = useState('');
   const [originalPdfUrl, setOriginalPdfUrl] = useState('');
@@ -205,6 +206,9 @@ const SignerView = () => {
         console.error('Error fetching document:', error);
         if (error?.code === 'storage/object-not-found') {
           setMissingFile(true);
+        } else if (error?.code === 'permission-denied' || error?.message?.toLowerCase().includes('permission')) {
+          // Block access if Firestore rules rejected the read (e.g. document link expired)
+          setIsExpired(true);
         }
       }
     };
@@ -490,6 +494,37 @@ const SignerView = () => {
       <div className="success-screen">
         <h1>🔒 Link No Longer Active</h1>
         <p>This document has already been completed. Thank you!</p>
+      </div>
+    );
+  }
+
+  // Expired link guard: link is no longer valid (e.g. past 30 days)
+  if (isExpired) {
+    return (
+      <div className="signer-view" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', backgroundColor: '#f9fafb' }}>
+        <div style={{
+          background: '#fff',
+          borderRadius: 16,
+          boxShadow: '0 4px 32px rgba(0,0,0,0.12)',
+          padding: '40px 32px',
+          maxWidth: 400,
+          width: '100%',
+          textAlign: 'center',
+          borderTop: '6px solid #ef4444'
+        }}>
+          <div style={{ color: '#ef4444', marginBottom: '16px', display: 'flex', justifyContent: 'center' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </div>
+          <h2 style={{ marginBottom: 12, fontSize: '1.5rem', color: '#1a1a1a', fontWeight: 'bold' }}>
+            קישור זה פג תוקף
+          </h2>
+          <p style={{ color: '#555', marginBottom: 24, fontSize: '1rem', lineHeight: '1.5' }}>
+            מטעמי אבטחה, הקישור לחתימה תקף לזמן מוגבל בלבד. אנא פנה לשולח לקבלת קישור חדש.
+          </p>
+        </div>
       </div>
     );
   }

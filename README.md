@@ -82,3 +82,10 @@ vercel link
 ## 📄 License
 
 Distributed under the MIT License. See `LICENSE` for more information.
+
+
+git add .
+git commit -m "fix problem"
+git checkout main
+git merge dev
+git push origin main
