@@ -295,6 +295,7 @@ export function useUploadView() {
       fileRef: `pdfs/${fileId}.pdf`,
       clientId:  currentUser.uid,
       createdAt: new Date().toISOString(),
+      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days expiration
       signerPhone: finalPhone,
       fields: confirmedFields.map((field, index) => ({
         index,

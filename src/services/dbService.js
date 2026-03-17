@@ -137,13 +137,15 @@ const deleteStorageAsset = async (storageTarget, assetLabel) => {
 // @param {string} fileRef  - Firebase Storage path ("pdfs/{fileId}.pdf")
 // @param {Array}  markers  - Array of marker objects placed by the admin
 // ---------------------------------------------------------------------------
-export const saveDocument = async (fileId, fileRef, markers) => {
+export const saveDocument = async (fileId, fileRef, markers, clientId) => {
   const documentRef = doc(db, 'documents', fileId);
 
   // Step 1 — write the top-level document record
   await setDoc(documentRef, {
     fileRef,
+    clientId,  // Added to fix the ownership/multi-tenant schema issue
     createdAt: new Date().toISOString(),
+    expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days expiration
 
     // aiStatus tracks where this document sits in the AI processing pipeline.
     // Starts as 'pending'; an external function updates it as work progresses.

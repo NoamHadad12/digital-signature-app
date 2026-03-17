@@ -8,7 +8,9 @@ service cloud.firestore {
 
       // Anyone who knows the document ID (i.e. received the signing link) can
       // fetch it. This is intentional \u2014 the opaque UUID acts as an access token.
-      allow get: if true;
+      // Additionally, we check that the document has not expired (IDOR mitigation).
+      allow get: if !('expiresAt' in resource.data) 
+                    || request.time.toMillis() < resource.data.expiresAt;
 
       // Only authenticated users may list/query documents, and only their own
       // (clientId must equal the caller's uid). Enforced server-side via Firestore
@@ -57,8 +59,10 @@ service cloud.firestore {
     // ── logs collection ───────────────────────────────────────────────────
     // Append-only audit trail. Any client may write a log entry (signers are
     // unauthenticated), but only authenticated users may read the audit log.
+    // To mitigate DoS, we enforce a strict schema and size limit.
     match /logs/{logId} {
-      allow create: if true;
+      allow create: if request.resource.data.keys().hasAll(['actionType', 'timestamp', 'documentId'])
+                    && request.resource.size < 2000;
       allow read:   if request.auth != null;
     }
   }
