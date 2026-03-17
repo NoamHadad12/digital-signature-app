@@ -3,7 +3,7 @@ import React from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
-import { getMarkerColor } from '../utils/pdfHelpers';
+import { getMarkerColor, PEN_SIZE_OPTIONS } from '../utils/pdfHelpers';
 import { useUploadView, FIELD_TYPES } from '../hooks/useUploadView';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -21,6 +21,8 @@ const UploadView = () => {
     setUseSmsAuth,
     signerPhone,
     setSignerPhone,
+    penThickness,
+    setPenThickness,
     fields,
     setFields,
     activeFieldType,
@@ -164,6 +166,58 @@ const UploadView = () => {
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {fileUrl && !generatedLink && (
+        <div style={{
+          background: '#ffffff',
+          border: '1px solid #e5e7eb',
+          borderRadius: '8px',
+          padding: '16px 20px',
+          marginTop: '20px',
+          textAlign: 'left',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+        }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '12px', marginTop: 0 }}>
+            <span style={{ marginRight: '8px' }}>✍️</span>
+            Document Settings
+          </h3>
+          
+          <div style={{ paddingLeft: '4px' }}>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: '#6b7280', fontWeight: 600, marginBottom: '6px' }}>
+              Signature Pen Thickness
+            </label>
+            <div className="sig-pen-size-buttons" style={{ display: 'flex', gap: '8px' }}>
+              {PEN_SIZE_OPTIONS.map((option) => {
+                const isActive = penThickness === option.key;
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className={`sig-pen-size-btn ${isActive ? 'active' : ''}`}
+                    onClick={() => setPenThickness(option.key)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      border: `1px solid ${isActive ? '#7c3aed' : '#d1d5db'}`,
+                      background: isActive ? '#ede9fe' : '#ffffff',
+                      color: isActive ? '#7c3aed' : '#4b5563',
+                      cursor: 'pointer',
+                      fontSize: '0.875rem',
+                      fontWeight: 500,
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '6px', marginBottom: 0 }}>
+              This thickness will be applied to the signer's pen.
+            </p>
+          </div>
         </div>
       )}
 

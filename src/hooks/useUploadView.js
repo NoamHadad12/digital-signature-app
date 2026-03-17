@@ -39,6 +39,9 @@ export function useUploadView() {
   const [useSmsAuth, setUseSmsAuth] = useState(false);
   const [signerPhone, setSignerPhone] = useState('+972');
 
+  // Pen Settings
+  const [penThickness, setPenThickness] = useState('medium');
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   // Ref-based guard prevents a second request from firing while one is already in flight,
   // even if the disabled button state is briefly bypassed (e.g. rapid keyboard activation).
@@ -297,6 +300,7 @@ export function useUploadView() {
       createdAt: new Date().toISOString(),
       expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days expiration
       signerPhone: finalPhone,
+      penThickness: penThickness,
       fields: confirmedFields.map((field, index) => ({
         index,
         type:  field.type  || 'signature',
@@ -389,6 +393,8 @@ export function useUploadView() {
     setUseSmsAuth,
     signerPhone,
     setSignerPhone,
+    penThickness,
+    setPenThickness,
     fields,
     setFields,
     activeFieldType,

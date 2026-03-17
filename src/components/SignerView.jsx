@@ -178,6 +178,10 @@ const SignerView = () => {
           setMarkers(result.markers);
           setOriginalPdfUrl(result.data?.originalPdfUrl || result.data?.fileUrl || '');
 
+          if (result.data?.penThickness && PEN_SIZE_OPTIONS.some(o => o.key === result.data.penThickness)) {
+            setSelectedPenSize(result.data.penThickness);
+          }
+
           // Enforce 2FA if the admin stored a signer phone number
           const phone = result.data?.signerPhone?.trim() || '';
           if (phone) {
@@ -724,29 +728,6 @@ const SignerView = () => {
                   <div className="form-card-body" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                     {signMode === 'draw' ? (
                       <>
-                        <div className="sig-pen-size-row" role="group" aria-label="Signature pen thickness">
-                          <span className="sig-pen-size-label">Pen thickness</span>
-                          <div className="sig-pen-size-buttons">
-                            {PEN_SIZE_OPTIONS.map((option) => {
-                              const isActive = selectedPenSize === option.key;
-                              return (
-                                <button
-                                  key={option.key}
-                                  type="button"
-                                  className={`sig-pen-size-btn${isActive ? ' active' : ''}`}
-                                  onClick={() => setSelectedPenSize(option.key)}
-                                  aria-pressed={isActive}
-                                >
-                                  <span>{option.label}</span>
-                                  <span
-                                    className="sig-pen-size-preview"
-                                    style={{ '--preview-thickness': `${option.lineWidth}px` }}
-                                  ></span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
                         <div className="form-sig-wrap" style={{ flexGrow: 1, height: '120px', minHeight: '120px', borderColor: isSigned ? '#e53e3e55' : '#e0e0e0' }}>
                           <SignatureCanvas
                             ref={sigCanvas}

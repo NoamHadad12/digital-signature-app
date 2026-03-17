@@ -47,6 +47,16 @@ export const getMarkerKey = (marker) => {
 };
 
 // ---------------------------------------------------------------------------
+// PEN_SIZE_OPTIONS
+// Options for signature pen thickness
+// ---------------------------------------------------------------------------
+export const PEN_SIZE_OPTIONS = [
+  { key: 'fine', label: 'Fine', lineWidth: 1.5, minWidth: 0.7, maxWidth: 1.6 },
+  { key: 'medium', label: 'Medium', lineWidth: 2.4, minWidth: 1.3, maxWidth: 2.6 },
+  { key: 'bold', label: 'Bold', lineWidth: 3.8, minWidth: 2.2, maxWidth: 4.2 },
+];
+
+// ---------------------------------------------------------------------------
 // useWindowWidth
 // Custom hook that listens to window resize events and returns the current width.
 // Both UploadView and SignerView use this to scale PDF pages responsively.
