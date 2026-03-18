@@ -16,8 +16,8 @@ const ProtectedRoute = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
 
-  // Block unapproved users
-  if (userProfile?.status === 'pending') {
+  // Block all unapproved users (Deny by Default)
+  if (userProfile?.status !== 'approved') {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 text-center p-4">
         <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-slate-100">

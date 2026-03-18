@@ -18,14 +18,15 @@ import { useAdminDashboard } from '../hooks/useAdminDashboard';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/** Format an ISO date string to a readable label, e.g. "Mar 8, 2026, 14:36" */
+/** Format an ISO date string to a readable label */
 const formatDate = (iso) => {
   if (!iso) return '—';
-  return new Intl.DateTimeFormat('en-GB', {
-    day:    'numeric',
-    month:  'short',
-    year:   'numeric',
-    hour:   '2-digit',
+  return new Intl.DateTimeFormat('he-IL', {
+    timeZone: 'Asia/Jerusalem',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
     minute: '2-digit',
     hour12: false,
   }).format(new Date(iso));
