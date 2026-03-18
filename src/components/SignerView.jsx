@@ -145,7 +145,7 @@ const SignerView = () => {
           ctx.drawImage(img, 0, 0, width, height);
           
           // Generate an optimized PNG data URL
-          setUploadedSignature(canvas.toDataURL('image/png'));
+          setUploadedSignature({ url: canvas.toDataURL('image/png'), width, height });
           setIsSigned(true);
         };
         img.src = reader.result;
@@ -428,7 +428,7 @@ const SignerView = () => {
               resolve(finalCanvas.toDataURL('image/png'));
             };
             img.onerror = reject;
-            img.src = uploadedSignature;
+            img.src = uploadedSignature.url;
           });
         } else if (sigCanvas.current && !sigCanvas.current.isEmpty()) {
           signatureData = sigCanvas.current.getCanvas().toDataURL('image/png');
@@ -754,8 +754,18 @@ const SignerView = () => {
                   <div className="form-card-body" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                     <div className="form-sig-wrap" style={{ display: 'flex', flexGrow: 1, alignItems: 'center', justifyContent: 'center', minHeight: '120px', borderColor: isSigned ? '#e53e3e55' : '#e0e0e0', overflow: 'hidden' }}>
                       {uploadedSignature ? (
-                        <div style={{ position: 'relative', display: 'inline-block', maxHeight: '120px', maxWidth: '100%' }}>
-                          <img src={uploadedSignature} alt="Uploaded signature" style={{ display: 'block', maxHeight: '120px', maxWidth: '100%', width: 'auto', opacity: 0.85 }} />
+                        <div style={{ 
+                          position: 'relative', 
+                          display: 'inline-block', 
+                          height: '120px', 
+                          aspectRatio: `${uploadedSignature.width} / ${uploadedSignature.height}`,
+                          border: '2px dashed #4299e1',
+                          borderRadius: '6px',
+                          boxShadow: '0 0 0 4px rgba(66, 153, 225, 0.1)',
+                          margin: '10px 0',
+                          backgroundColor: '#fafafa'
+                        }}>
+                          <img src={uploadedSignature.url} alt="Uploaded signature" style={{ display: 'block', height: '100%', width: '100%', objectFit: 'contain', opacity: 0.85 }} />
                           <div style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'crosshair' }}>
                             <SignatureCanvas
                               ref={sigCanvas}
@@ -766,6 +776,9 @@ const SignerView = () => {
                               canvasProps={{ className: 'sigCanvas', style: { width: '100%', height: '100%', display: 'block' } }}
                             />
                           </div>
+                            <div style={{ position: 'absolute', bottom: '8px', left: '50%', transform: 'translateX(-50%)', fontSize: '11px', background: 'rgba(66, 153, 225, 0.9)', color: 'white', padding: '4px 10px', borderRadius: '12px', pointerEvents: 'none', zIndex: 20, whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                              🖍️ Draw to add signature
+                            </div>
                         </div>
                       ) : (
                         <div style={{ position: 'relative', width: '100%', height: '120px' }}>
