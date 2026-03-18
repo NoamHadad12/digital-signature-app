@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 // Wraps any route that requires the user to be authenticated.
-// Any registered user can access protected routes — tenant isolation is
+// Any registered user can access protected routes. Tenant isolation is
 // enforced at the data layer (Firestore rules + clientId == uid filter).
 // 'replace' prevents the login page from being pushed onto the browser history stack,
 // so pressing Back after login doesn't loop back to /login.
@@ -17,7 +17,7 @@ const ProtectedRoute = ({ children }) => {
   }
 
   // Block all unapproved users (Deny by Default)
-  if (userProfile?.status !== 'approved') {
+  if (!userProfile || userProfile.status !== 'approved') {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 text-center p-4">
         <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-slate-100">

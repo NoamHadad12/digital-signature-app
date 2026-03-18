@@ -59,13 +59,13 @@ const SignUp = () => {
         firstName: firstName.trim(),
         lastName:  lastName.trim(),
         email,
-        status: email === 'nohadad@g.jct.ac.il' ? 'approved' : 'pending',
-        role: email === 'nohadad@g.jct.ac.il' ? 'superAdmin' : 'user',
+        status: email === 'noam.hadad23@gmail.com' ? 'approved' : 'pending',
+        role: email === 'noam.hadad23@gmail.com' ? 'superAdmin' : 'user',
         createdAt: new Date().toISOString(),
       });
       navigate('/');
     } catch (err) {
-      setError(AUTH_ERRORS[err.code] || 'ההרשמה נכשלה. אנא נסה שנית.');
+      setError(AUTH_ERRORS[err.code] || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
