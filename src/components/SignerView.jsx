@@ -114,11 +114,8 @@ const SignerView = () => {
   // -------------------------------------------------------------------------
 
   const handleClearSignature = () => {
-    if (signMode === 'draw') {
-      sigCanvas.current?.clear();
-    } else {
-      setUploadedSignature(null);
-    }
+    sigCanvas.current?.clear();
+    setUploadedSignature(null);
     setIsSigned(false);
   };
 
@@ -414,13 +411,49 @@ const SignerView = () => {
 
       let signatureData = null;
       if (hasSignature) {
-        if (signMode === 'upload') {
-          signatureData = uploadedSignature;
-        } else {
+        if (signMode === 'upload' && uploadedSignature) {
+          // Combine uploaded image and drawn signature
+          const finalCanvas = document.createElement('canvas');
+          const drawnCanvas = sigCanvas.current.getCanvas();
+          finalCanvas.width = drawnCanvas.width;
+          finalCanvas.height = drawnCanvas.height;
+          const ctx = finalCanvas.getContext('2d');
+          
+          signatureData = await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+              // Draw image in center to match object-contain styling
+              const scale = Math.min(finalCanvas.width / img.width, finalCanvas.height / img.height);
+              const w = img.width * scale;
+              const h = img.height * scale;
+              const x = (finalCanvas.width - w) / 2;
+              const y = (finalCanvas.height - h) / 2;
+              
+              ctx.drawImage(img, x, y, w, h);
+              ctx.drawImage(drawnCanvas, 0, 0);
+              resolve(finalCanvas.toDataURL('image/png'));
+            };
+            img.onerror = reject;
+            img.src = uploadedSignature;
+          });
+        } else if (sigCanvas.current && !sigCanvas.current.isEmpty()) {
           signatureData = sigCanvas.current.getCanvas().toDataURL('image/png');
+        } else if (signMode === 'upload' && uploadedSignature) {
+          signatureData = uploadedSignature;
         }
       }
 
+      await continueSubmission(signatureData, formValues, cleanupTargetUrl);
+    } catch (error) {
+      console.error('Error submitting document:', error);
+      showToast(error.message, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const continueSubmission = async (signatureData, formValues, cleanupTargetUrl) => {
+    try {
       const response = await fetch('/api/sign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -749,7 +782,16 @@ const SignerView = () => {
                       <div className="form-sig-wrap" style={{ display: 'flex', flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: '10px', height: '120px', minHeight: '120px', borderColor: isSigned ? '#e53e3e55' : '#e0e0e0' }}>
                         {uploadedSignature ? (
                           <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                            <img src={uploadedSignature} alt="Uploaded signature" className="object-contain max-h-full" style={{ maxHeight: '100%', maxWidth: '100%' }} />
+                            <img src={uploadedSignature} alt="Uploaded signature" className="object-contain max-h-full" style={{ maxHeight: '100%', maxWidth: '100%', position: 'absolute' }} />
+                            <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
+                              <SignatureCanvas
+                                ref={sigCanvas}
+                                penColor="#1a1a1a"
+                                minWidth={selectedPenConfig.minWidth}
+                                maxWidth={selectedPenConfig.maxWidth}
+                                canvasProps={{ className: 'sigCanvas', style: { width: '100%', height: '100%' } }}
+                              />
+                            </div>
                           </div>
                         ) : (
                           <label style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#666' }}>
