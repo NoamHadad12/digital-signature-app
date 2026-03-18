@@ -59,7 +59,7 @@ const SignUp = () => {
         firstName: firstName.trim(),
         lastName:  lastName.trim(),
         email,
-        status: email === 'noam.hadad23@gmail.com' ? 'approved' : 'pending',
+        status: 'pending',
         role: email === 'noam.hadad23@gmail.com' ? 'superAdmin' : 'user',
         createdAt: new Date().toISOString(),
       });

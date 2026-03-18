@@ -415,14 +415,14 @@ export default function AdminDashboard() {
                       <td className="p-4 text-sm text-gray-600">{u.email}</td>
                       <td className="p-4 text-sm">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          u.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                          u.status?.toLowerCase() === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
                         }`}>
-                          {u.status === 'approved' ? 'Approved' : 'Pending'}
+                          {u.status?.toLowerCase() === 'approved' ? 'Approved' : 'Pending'}
                         </span>
                       </td>
                       <td className="p-4 text-sm text-gray-600">{u.role}</td>
                       <td className="p-4 text-right">
-                        {u.status === 'pending' && (
+                        {u.status?.toLowerCase() === 'pending' && (
                           <button
                             onClick={() => handleApproveUser(u.id)}
                             className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-1.5 px-3 rounded-lg text-xs transition-colors"
@@ -430,7 +430,7 @@ export default function AdminDashboard() {
                             Approve
                           </button>
                         )}
-                        {u.status === 'approved' && u.role !== 'superAdmin' && (
+                        {u.status?.toLowerCase() === 'approved' && u.role !== 'superAdmin' && (
                           <button
                             onClick={() => handleRevokeUser(u.id)}
                             className="bg-red-600 hover:bg-red-700 text-white font-semibold py-1.5 px-3 rounded-lg text-xs transition-colors ml-2"
