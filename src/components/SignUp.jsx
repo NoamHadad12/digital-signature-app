@@ -59,6 +59,8 @@ const SignUp = () => {
         firstName: firstName.trim(),
         lastName:  lastName.trim(),
         email,
+        status: email === 'nohadad@g.jct.ac.il' ? 'approved' : 'pending',
+        role: email === 'nohadad@g.jct.ac.il' ? 'superAdmin' : 'user',
         createdAt: new Date().toISOString(),
       });
       navigate('/');

@@ -20,7 +20,7 @@ export const AuthProvider = ({ children }) => {
   // userProfile: firstName + lastName fetched from the users Firestore collection
   // loading: true while Firebase resolves the initial auth state on page load
   const [currentUser, setCurrentUser] = useState(null);
-  const [userProfile, setUserProfile] = useState({ firstName: '', lastName: '' });
+  const [userProfile, setUserProfile] = useState({ firstName: '', lastName: '', status: 'pending', role: 'user' });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,16 +32,16 @@ export const AuthProvider = ({ children }) => {
         try {
           const snap = await getDoc(doc(db, 'users', user.uid));
           if (snap.exists()) {
-            const { firstName = '', lastName = '' } = snap.data();
-            setUserProfile({ firstName, lastName });
+            const { firstName = '', lastName = '', status = 'pending', role = 'user' } = snap.data();
+            setUserProfile({ firstName, lastName, status, role });
           } else {
-            setUserProfile({ firstName: '', lastName: '' });
+            setUserProfile({ firstName: '', lastName: '', status: 'pending', role: 'user' });
           }
         } catch {
-          setUserProfile({ firstName: '', lastName: '' });
+          setUserProfile({ firstName: '', lastName: '', status: 'pending', role: 'user' });
         }
       } else {
-        setUserProfile({ firstName: '', lastName: '' });
+        setUserProfile({ firstName: '', lastName: '', status: 'pending', role: 'user' });
       }
       setLoading(false);
     });
