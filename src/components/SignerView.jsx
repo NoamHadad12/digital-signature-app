@@ -169,9 +169,14 @@ const SignerView = () => {
         // Load markers and document metadata from Firestore
         const result = await fetchDocument(documentId);
         if (result) {
-          // Block access if this document has already been signed — link is single-use
-          if ((result.data?.status || '').toLowerCase() === 'signed') {
+          // Block access if this document has already been signed or is not pending
+          const currentStatus = (result.data?.status || '').toLowerCase();
+          
+          if (currentStatus === 'signed') {
             setIsAlreadySigned(true);
+            return;
+          } else if (currentStatus !== 'pending') {
+            setIsExpired(true);
             return;
           }
 

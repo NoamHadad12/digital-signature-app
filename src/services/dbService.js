@@ -144,6 +144,7 @@ export const saveDocument = async (fileId, fileRef, markers, clientId) => {
   await setDoc(documentRef, {
     fileRef,
     clientId,  // Added to fix the ownership/multi-tenant schema issue
+    status: 'pending',
     createdAt: new Date().toISOString(),
     expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days expiration
 

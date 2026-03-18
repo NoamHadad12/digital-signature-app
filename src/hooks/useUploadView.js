@@ -297,6 +297,7 @@ export function useUploadView() {
       originalPdfUrl: fileUrl,
       fileRef: `pdfs/${fileId}.pdf`,
       clientId:  currentUser.uid,
+      status: 'pending',
       createdAt: new Date().toISOString(),
       expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days expiration
       signerPhone: finalPhone,
