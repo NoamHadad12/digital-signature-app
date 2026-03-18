@@ -505,3 +505,20 @@ export const editDocumentName = async (documentId, newFileName) => {
   }
 };
 
+
+// ---------------------------------------------------------------------------
+// Users Administration
+// ---------------------------------------------------------------------------
+export const subscribeUsers = (onData, onError) => {
+  const usersRef = collection(db, 'users');
+  return onSnapshot(usersRef, (snapshot) => {
+    const data = [];
+    snapshot.forEach(docSnap => data.push({ id: docSnap.id, ...docSnap.data() }));
+    onData(data);
+  }, onError);
+};
+
+export const updateUserStatus = async (uid, status) => {
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, { status });
+};

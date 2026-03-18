@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
-import { subscribeFilteredDocuments, deleteDocument, editDocumentName } from '../services/dbService';
+import { subscribeFilteredDocuments, deleteDocument, editDocumentName, subscribeUsers, updateUserStatus } from '../services/dbService';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 
 export function useAdminDashboard() {
   const { currentUser, logout, userProfile } = useAuth();
   const { showToast, confirm } = useNotification();
+
+  const [activeTab, setActiveTab] = useState('documents');
+  const [users, setUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
 
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading]     = useState(false);
@@ -58,6 +62,42 @@ export function useAdminDashboard() {
     return () => unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.uid, appliedFilters]);
+
+  // Subscribe to users if superAdmin
+  useEffect(() => {
+    if (userProfile?.role !== 'superAdmin') return;
+    setLoadingUsers(true);
+    const unsubscribe = subscribeUsers(
+      (data) => {
+        setUsers(data);
+        setLoadingUsers(false);
+      },
+      (err) => {
+        console.error(err);
+        showToast('Error syncing users', 'error');
+        setLoadingUsers(false);
+      }
+    );
+    return () => unsubscribe();
+  }, [userProfile?.role]);
+
+  const handleApproveUser = async (uid) => {
+    try {
+      await updateUserStatus(uid, 'approved');
+      showToast('User approved successfully!');
+    } catch {
+      showToast('Failed to approve user', 'error');
+    }
+  };
+
+  const handleRevokeUser = async (uid) => {
+    try {
+      await updateUserStatus(uid, 'pending');
+      showToast('User revoked successfully!');
+    } catch {
+      showToast('Failed to revoke user', 'error');
+    }
+  };
 
   const handleFilter = (e) => {
     e.preventDefault();
@@ -143,6 +183,12 @@ export function useAdminDashboard() {
   };
 
   return {
+    activeTab,
+    setActiveTab,
+    users,
+    loadingUsers,
+    handleApproveUser,
+    handleRevokeUser,
     currentUser,
     userProfile,
     logout,

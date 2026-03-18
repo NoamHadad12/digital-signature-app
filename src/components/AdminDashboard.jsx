@@ -35,6 +35,12 @@ const formatDate = (iso) => {
 
 export default function AdminDashboard() {
   const {
+    activeTab,
+    setActiveTab,
+    users,
+    loadingUsers,
+    handleApproveUser,
+    handleRevokeUser,
     userProfile,
     logout,
     documents,
@@ -86,12 +92,40 @@ export default function AdminDashboard() {
 
         {/* Page Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Document Management</h1>
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Admin Dashboard</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Search, filter and manage all uploaded signing documents.
+            Manage your workspace.
           </p>
         </div>
 
+        {/* Dashboard Tabs */}
+        <div className="flex gap-4 mb-6 border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab('documents')}
+            className={`pb-2 text-sm font-semibold transition-colors ${
+              activeTab === 'documents'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Documents
+          </button>
+          {userProfile?.role === 'superAdmin' && (
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`pb-2 text-sm font-semibold transition-colors ${
+                activeTab === 'users'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Users & Approvals
+            </button>
+          )}
+        </div>
+
+        {activeTab === 'documents' && (
+          <>
         {/* ── Filter Card ──────────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6">
           <div className="flex items-center justify-between gap-2 mb-5">
@@ -340,6 +374,77 @@ export default function AdminDashboard() {
             </table>
           </div>
         </div>
+        </>
+        )}
+
+        {activeTab === 'users' && userProfile?.role === 'superAdmin' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-700">
+                Users & Approvals
+                {!loadingUsers && (
+                  <span className="ml-2 text-xs font-normal text-gray-400">({users.length} records)</span>
+                )}
+              </h3>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-50">
+                  <tr className="border-b border-slate-100">
+                    <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                    <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                    <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
+                    <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white">
+                  {loadingUsers ? (
+                    <tr>
+                      <td colSpan="5" className="p-4 text-center">Loading...</td>
+                    </tr>
+                  ) : users.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="p-4 text-center text-gray-500">No users found.</td>
+                    </tr>
+                  ) : users.map(u => (
+                    <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                      <td className="p-4 text-sm font-medium text-gray-800">{u.firstName} {u.lastName}</td>
+                      <td className="p-4 text-sm text-gray-600">{u.email}</td>
+                      <td className="p-4 text-sm">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          u.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          {u.status === 'approved' ? 'Approved' : 'Pending'}
+                        </span>
+                      </td>
+                      <td className="p-4 text-sm text-gray-600">{u.role}</td>
+                      <td className="p-4 text-right">
+                        {u.status === 'pending' && (
+                          <button
+                            onClick={() => handleApproveUser(u.id)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-1.5 px-3 rounded-lg text-xs transition-colors"
+                          >
+                            Approve
+                          </button>
+                        )}
+                        {u.status === 'approved' && u.role !== 'superAdmin' && (
+                          <button
+                            onClick={() => handleRevokeUser(u.id)}
+                            className="bg-red-600 hover:bg-red-700 text-white font-semibold py-1.5 px-3 rounded-lg text-xs transition-colors ml-2"
+                          >
+                            Revoke
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* ── Edit / Rename Modal ─────────────────────────────────────────── */}
