@@ -779,18 +779,22 @@ const SignerView = () => {
                         </div>
                       </>
                     ) : (
-                      <div className="form-sig-wrap" style={{ display: 'flex', flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: '10px', height: '120px', minHeight: '120px', borderColor: isSigned ? '#e53e3e55' : '#e0e0e0' }}>
+                      <div className="form-sig-wrap" style={{ display: 'flex', flexGrow: 1, alignItems: 'center', justifyContent: 'center', height: '120px', minHeight: '120px', borderColor: isSigned ? '#e53e3e55' : '#e0e0e0', padding: uploadedSignature ? '0' : '10px' }}>
                         {uploadedSignature ? (
-                          <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                            <img src={uploadedSignature} alt="Uploaded signature" className="object-contain max-h-full" style={{ maxHeight: '100%', maxWidth: '100%', position: 'absolute' }} />
-                            <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
+                          <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fafafa', borderRadius: '4px', overflow: 'hidden' }}>
+                            <img src={uploadedSignature} alt="Uploaded signature" className="object-contain" style={{ maxHeight: '100%', maxWidth: '100%', opacity: 0.8 }} />
+                            <div style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'crosshair' }}>
                               <SignatureCanvas
                                 ref={sigCanvas}
                                 penColor="#1a1a1a"
                                 minWidth={selectedPenConfig.minWidth}
                                 maxWidth={selectedPenConfig.maxWidth}
+                                onBegin={() => setIsSigned(true)}
                                 canvasProps={{ className: 'sigCanvas', style: { width: '100%', height: '100%' } }}
                               />
+                            </div>
+                            <div style={{ position: 'absolute', bottom: '4px', right: '4px', fontSize: '11px', background: 'rgba(0,0,0,0.6)', color: 'white', padding: '3px 8px', borderRadius: '12px', pointerEvents: 'none', zIndex: 20 }}>
+                              🖍️ Draw over image
                             </div>
                           </div>
                         ) : (
